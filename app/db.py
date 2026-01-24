@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS tournaments (
   starts_at TEXT NOT NULL,
   capacity INTEGER NOT NULL,
   description TEXT,
+  close_mode TEXT NOT NULL DEFAULT 'at_start', -- at_start | minutes_before
+  close_minutes_before INTEGER,
+  cancel_minutes_before INTEGER NOT NULL DEFAULT 360,
+  waitlist_limit INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1
 );
 
@@ -66,7 +70,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   user_id INTEGER NOT NULL,
   entity_type TEXT NOT NULL, -- training | tournament
   entity_id INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active', -- active | cancelled
+  status TEXT NOT NULL DEFAULT 'active', -- active | waitlist | cancelled
   created_at TEXT NOT NULL
 );
 
@@ -84,7 +88,7 @@ CREATE TABLE IF NOT EXISTS payments (
 
 CREATE TABLE IF NOT EXISTS payment_settings (
   id INTEGER PRIMARY KEY CHECK(id=1),
-  text TEXT NOT NULL DEFAULT ':   .',
+  text TEXT NOT NULL DEFAULT 'Оплата: уточните у тренера.',
   amount INTEGER,
   updated_at TEXT NOT NULL
 );
@@ -111,15 +115,33 @@ class DB:
     async def init(self) -> None:
         async with self.connect() as db:
             await db.executescript(SCHEMA_SQL)
+            await self._migrate(db)
             # seed payment_settings row
             cur = await db.execute("SELECT id FROM payment_settings WHERE id=1")
             row = await cur.fetchone()
             if row is None:
                 await db.execute(
                     "INSERT INTO payment_settings(id, text, amount, updated_at) VALUES (1, ?, ?, ?)",
-                    (":   .", None, datetime.utcnow().isoformat())
+                    ("Оплата: уточните у тренера.", None, datetime.utcnow().isoformat())
                 )
             await db.commit()
+
+    async def _migrate(self, db: aiosqlite.Connection) -> None:
+        # add new columns to tournaments if missing
+        cur = await db.execute("PRAGMA table_info(tournaments)")
+        rows = await cur.fetchall()
+        existing = {r["name"] for r in rows}
+        migrations = []
+        if "close_mode" not in existing:
+            migrations.append("ALTER TABLE tournaments ADD COLUMN close_mode TEXT NOT NULL DEFAULT 'at_start'")
+        if "close_minutes_before" not in existing:
+            migrations.append("ALTER TABLE tournaments ADD COLUMN close_minutes_before INTEGER")
+        if "cancel_minutes_before" not in existing:
+            migrations.append("ALTER TABLE tournaments ADD COLUMN cancel_minutes_before INTEGER NOT NULL DEFAULT 360")
+        if "waitlist_limit" not in existing:
+            migrations.append("ALTER TABLE tournaments ADD COLUMN waitlist_limit INTEGER NOT NULL DEFAULT 0")
+        for stmt in migrations:
+            await db.execute(stmt)
 
     # ---------- user ----------
     async def upsert_user(self, user_id: int, username: str, full_name: str) -> None:
@@ -273,11 +295,127 @@ class DB:
             row = await cur.fetchone()
             return dict(row) if row else None
 
+    # ---------- tournaments ----------
+    async def create_tournament(
+        self,
+        title: str,
+        starts_at: str,
+        capacity: int,
+        description: Optional[str],
+        close_mode: str = "at_start",
+        close_minutes_before: Optional[int] = None,
+        cancel_minutes_before: int = 360,
+        waitlist_limit: int = 0,
+    ) -> int:
+        async with self.connect() as db:
+            cur = await db.execute(
+                """INSERT INTO tournaments(
+                    title, starts_at, capacity, description,
+                    close_mode, close_minutes_before, cancel_minutes_before, waitlist_limit
+                ) VALUES(?,?,?,?,?,?,?,?)""",
+                (
+                    title,
+                    starts_at,
+                    capacity,
+                    description,
+                    close_mode,
+                    close_minutes_before,
+                    cancel_minutes_before,
+                    waitlist_limit,
+                ),
+            )
+            await db.commit()
+            return int(cur.lastrowid)
+
+    async def add_tournament_group(self, tournament_id: int, group_id: int) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO tournament_groups(tournament_id, group_id) VALUES(?,?)",
+                (tournament_id, group_id),
+            )
+            await db.commit()
+
+    async def list_tournaments_for_groups(
+        self,
+        group_ids: List[int],
+        from_iso: str,
+        to_iso: str,
+        limit: int = 25,
+    ) -> List[dict]:
+        if not group_ids:
+            return []
+        placeholders = ",".join(["?"] * len(group_ids))
+        sql = f"""
+            SELECT DISTINCT t.*
+            FROM tournaments t
+            JOIN tournament_groups tg ON tg.tournament_id = t.tournament_id
+            WHERE tg.group_id IN ({placeholders})
+              AND t.is_active=1
+              AND t.starts_at BETWEEN ? AND ?
+            ORDER BY t.starts_at
+            LIMIT ?
+        """
+        params = group_ids + [from_iso, to_iso, limit]
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(sql, params)
+            return [dict(r) for r in rows]
+
+    async def list_tournaments(self, offset: int, limit: int) -> List[dict]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT * FROM tournaments WHERE is_active=1 ORDER BY starts_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+            return [dict(r) for r in rows]
+
+    async def count_tournaments(self) -> int:
+        async with self.connect() as db:
+            cur = await db.execute("SELECT COUNT(*) AS c FROM tournaments WHERE is_active=1")
+            row = await cur.fetchone()
+            return int(row["c"])
+
+    async def get_tournament(self, tournament_id: int) -> Optional[dict]:
+        async with self.connect() as db:
+            cur = await db.execute("SELECT * FROM tournaments WHERE tournament_id=?", (tournament_id,))
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def list_tournament_groups(self, tournament_id: int) -> List[int]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT group_id FROM tournament_groups WHERE tournament_id=?",
+                (tournament_id,),
+            )
+            return [int(r["group_id"]) for r in rows]
+
+    async def update_tournament_settings(self, tournament_id: int, **fields: Any) -> None:
+        if not fields:
+            return
+        keys = []
+        vals = []
+        for k, v in fields.items():
+            keys.append(f"{k}=?")
+            vals.append(v)
+        vals.append(tournament_id)
+        sql = f"UPDATE tournaments SET {', '.join(keys)} WHERE tournament_id=?"
+        async with self.connect() as db:
+            await db.execute(sql, tuple(vals))
+            await db.commit()
+
     async def count_active_bookings(self, entity_type: str, entity_id: int) -> int:
         async with self.connect() as db:
             cur = await db.execute(
                 "SELECT COUNT(*) AS c FROM bookings WHERE entity_type=? AND entity_id=? AND status='active'",
                 (entity_type, entity_id)
+            )
+            row = await cur.fetchone()
+            return int(row["c"])
+
+    async def count_bookings(self, entity_type: str, entity_id: int, status: str) -> int:
+        async with self.connect() as db:
+            cur = await db.execute(
+                "SELECT COUNT(*) AS c FROM bookings WHERE entity_type=? AND entity_id=? AND status=?",
+                (entity_type, entity_id, status)
             )
             row = await cur.fetchone()
             return int(row["c"])
@@ -291,11 +429,20 @@ class DB:
             row = await cur.fetchone()
             return dict(row) if row else None
 
-    async def create_booking(self, user_id: int, entity_type: str, entity_id: int) -> int:
+    async def get_user_booking_any(self, user_id: int, entity_type: str, entity_id: int) -> Optional[dict]:
+        async with self.connect() as db:
+            cur = await db.execute(
+                "SELECT * FROM bookings WHERE user_id=? AND entity_type=? AND entity_id=? AND status IN ('active','waitlist')",
+                (user_id, entity_type, entity_id)
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def create_booking(self, user_id: int, entity_type: str, entity_id: int, status: str = "active") -> int:
         async with self.connect() as db:
             cur = await db.execute(
                 "INSERT INTO bookings(user_id, entity_type, entity_id, status, created_at) VALUES(?,?,?,?,?)",
-                (user_id, entity_type, entity_id, 'active', datetime.utcnow().isoformat())
+                (user_id, entity_type, entity_id, status, datetime.utcnow().isoformat())
             )
             booking_id = int(cur.lastrowid)
             await db.execute(
@@ -310,28 +457,42 @@ class DB:
             await db.execute("UPDATE bookings SET status='cancelled' WHERE booking_id=?", (booking_id,))
             await db.commit()
 
-    async def list_entity_bookings(self, entity_type: str, entity_id: int, offset: int, limit: int) -> List[dict]:
+    async def update_booking_status(self, booking_id: int, status: str) -> None:
+        async with self.connect() as db:
+            await db.execute("UPDATE bookings SET status=? WHERE booking_id=?", (status, booking_id))
+            await db.commit()
+
+    async def list_entity_bookings(self, entity_type: str, entity_id: int, offset: int, limit: int, status: str = "active") -> List[dict]:
         async with self.connect() as db:
             rows = await db.execute_fetchall(
                 """SELECT b.booking_id, b.user_id, u.full_name, u.username, p.status AS pay_status
                 FROM bookings b
                 JOIN users u ON u.user_id=b.user_id
                 LEFT JOIN payments p ON p.booking_id=b.booking_id
-                WHERE b.entity_type=? AND b.entity_id=? AND b.status='active'
+                WHERE b.entity_type=? AND b.entity_id=? AND b.status=?
                 ORDER BY b.created_at
                 LIMIT ? OFFSET ?""",
-                (entity_type, entity_id, limit, offset)
+                (entity_type, entity_id, status, limit, offset)
             )
             return [dict(r) for r in rows]
 
-    async def count_entity_bookings(self, entity_type: str, entity_id: int) -> int:
+    async def count_entity_bookings(self, entity_type: str, entity_id: int, status: str = "active") -> int:
         async with self.connect() as db:
             cur = await db.execute(
-                "SELECT COUNT(*) AS c FROM bookings WHERE entity_type=? AND entity_id=? AND status='active'",
-                (entity_type, entity_id)
+                "SELECT COUNT(*) AS c FROM bookings WHERE entity_type=? AND entity_id=? AND status=?",
+                (entity_type, entity_id, status)
             )
             row = await cur.fetchone()
             return int(row["c"])
+
+    async def pop_waitlist(self, entity_type: str, entity_id: int) -> Optional[dict]:
+        async with self.connect() as db:
+            cur = await db.execute(
+                "SELECT * FROM bookings WHERE entity_type=? AND entity_id=? AND status='waitlist' ORDER BY created_at LIMIT 1",
+                (entity_type, entity_id),
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
 
     async def toggle_payment(self, booking_id: int, admin_id: int) -> str:
         async with self.connect() as db:

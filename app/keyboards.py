@@ -1,7 +1,9 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+﻿from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
 
 def ikb(rows):
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 def kb_main(is_admin: bool):
     rows = [
@@ -14,32 +16,37 @@ def kb_main(is_admin: bool):
         rows.append([InlineKeyboardButton(text="🛠 Админ меню", callback_data="admin:root")])
     return ikb(rows)
 
+
 def kb_back(to: str = "main"):
     return ikb([[InlineKeyboardButton(text="⬅️ Назад", callback_data=to)]])
+
 
 def kb_admin_root():
     return ikb([
         [InlineKeyboardButton(text="👥 Группы", callback_data="admin:groups:page:0")],
         [InlineKeyboardButton(text="🔗 Пригласительные ссылки", callback_data="admin:invites")],
         [InlineKeyboardButton(text="📅 Занятия (слоты)", callback_data="admin:slots")],
+        [InlineKeyboardButton(text="🏆 Турниры", callback_data="admin:tournaments")],
         [InlineKeyboardButton(text="💳 Оплата: реквизиты", callback_data="admin:payset")],
         [InlineKeyboardButton(text="📣 Рассылка", callback_data="admin:bc")],
         [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="main")],
     ])
 
+
 def kb_pagination(prefix: str, page: int, has_prev: bool, has_next: bool, extra_buttons=None):
     extra_buttons = extra_buttons or []
-    nav=[]
+    nav = []
     if has_prev:
         nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"{prefix}:page:{page-1}"))
     if has_next:
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"{prefix}:page:{page+1}"))
-    rows=[]
+    rows = []
     if nav:
         rows.append(nav)
     rows.extend(extra_buttons)
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")])
     return ikb(rows)
+
 
 def kb_group_actions(group_id: int):
     return ikb([
@@ -49,14 +56,27 @@ def kb_group_actions(group_id: int):
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:groups:page:0")],
     ])
 
+
 def kb_slot_actions(slot_id: int, can_join: bool, can_leave: bool):
-    rows=[]
+    rows = []
     if can_join:
         rows.append([InlineKeyboardButton(text="✅ Записаться", callback_data=f"train:join:{slot_id}")])
     if can_leave:
         rows.append([InlineKeyboardButton(text="❌ Отменить запись", callback_data=f"train:leave:{slot_id}")])
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="train:list")])
     return ikb(rows)
+
+
+def kb_tour_actions(tournament_id: int, can_join: bool, can_leave: bool, is_waitlist: bool):
+    rows = []
+    if can_join:
+        rows.append([InlineKeyboardButton(text="✅ Записаться", callback_data=f"tour:join:{tournament_id}")])
+    if can_leave:
+        text = "❌ Выйти из листа ожидания" if is_waitlist else "❌ Отменить запись"
+        rows.append([InlineKeyboardButton(text=text, callback_data=f"tour:leave:{tournament_id}")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="tour:list")])
+    return ikb(rows)
+
 
 def kb_admin_slots_root():
     return ikb([
@@ -65,14 +85,23 @@ def kb_admin_slots_root():
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
     ])
 
-def kb_admin_entity_users(entity_type: str, entity_id: int, page: int, has_prev: bool, has_next: bool):
-    nav=[]
+
+def kb_admin_tournaments_root():
+    return ikb([
+        [InlineKeyboardButton(text="➕ Создать турнир", callback_data="admin:tournament:create")],
+        [InlineKeyboardButton(text="📄 Список турниров", callback_data="admin:tournament:list:page:0")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
+    ])
+
+
+def kb_admin_entity_users(entity_type: str, entity_id: int, page: int, has_prev: bool, has_next: bool, back_to: str):
+    nav = []
     if has_prev:
         nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"admin:{entity_type}:{entity_id}:users:page:{page-1}"))
     if has_next:
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"admin:{entity_type}:{entity_id}:users:page:{page+1}"))
-    rows=[]
+    rows = []
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:slots")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=back_to)])
     return ikb(rows)
