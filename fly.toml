@@ -1,0 +1,12 @@
+app = "trainer-bot"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DATABASE_PATH = "/data/trainer_bot.db"
+  TZ_OFFSET_HOURS = "3"
+
+[mounts]
+  source = "data"
+  destination = "/data"
