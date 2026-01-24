@@ -12,9 +12,7 @@ __pycache__/
 venv/
 ENV/
 
-# dotenv / secrets
-.env
-.env.*
+
 
 # Local databases
 *.db
