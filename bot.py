@@ -235,6 +235,9 @@ async def cb_pay_info(call: CallbackQuery):
     s = await db.get_payment_settings()
 
     text = s.get("text") or "Оплата: уточните у тренера."
+    amount = s.get("amount")
+    if amount:
+        text = f"{text}\n\n\\u0421\\u0443\\u043c\\u043c\\u0430: <b>{amount}</b>"
 
     await call.message.edit_text(text, reply_markup=kb_back("main"))
 
@@ -827,7 +830,7 @@ async def cb_admin_group_create(call: CallbackQuery):
 
 
 
-@router.callback_query(F.data.startswith("admin:group:") & ~F.data.contains(":"))
+@router.callback_query(F.data.regexp("^admin:group:\\d+$"))
 
 async def cb_admin_group_open(call: CallbackQuery):
 
@@ -2276,6 +2279,8 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(main())
+
+
 
 
 
