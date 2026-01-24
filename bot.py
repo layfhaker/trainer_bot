@@ -102,6 +102,29 @@ def mention(full_name: str, username: Optional[str]) -> str:
     return full_name
 
 
+def next_weekday_datetime(weekday: int, time_str: str):
+
+    """Return next datetime for given weekday (0=Mon) at HH:MM in local TZ."""
+
+    from datetime import datetime
+
+    now = tz_now(TZ_OFFSET_HOURS)
+
+    hour, minute = map(int, time_str.split(":"))
+
+    days_ahead = (weekday - now.weekday()) % 7
+
+    candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    if days_ahead == 0 and candidate <= now:
+
+        days_ahead = 7
+
+    target = candidate + timedelta(days=days_ahead)
+
+    return target
+
+
 
 async def show_main(target: Message | CallbackQuery, user_id: int, text: Optional[str] = None):
 
@@ -914,7 +937,7 @@ async def cb_admin_invites(call: CallbackQuery):
     total = await db.count_groups()
     if total == 0:
         rows = [
-            [__import__("aiogram").types.InlineKeyboardButton(text="? Создать группу", callback_data="admin:group:create")],
+            [__import__("aiogram").types.InlineKeyboardButton(text="Создать группу", callback_data="admin:group:create")],
             [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
         ]
         kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
@@ -1191,16 +1214,133 @@ async def cb_admin_slot_create(call: CallbackQuery):
 
         return
 
-    await db.set_mode(call.from_user.id, "admin_slot_create:group_id")
+    await cb_admin_slot_create_pickgroup(call, page=0)
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("admin:slot:create:pickgroup:page:"))
+
+async def cb_admin_slot_create_pickgroup_page(call: CallbackQuery):
+
+    page = int(call.data.split(":")[-1])
+
+    await cb_admin_slot_create_pickgroup(call, page)
+
+
+async def cb_admin_slot_create_pickgroup(call: CallbackQuery, page: int):
+
+    if not is_admin(call.from_user.id):
+
+        await call.answer("Нет доступа.", show_alert=True)
+
+        return
+
+    limit = 8
+
+    offset = page * limit
+
+    total = await db.count_groups()
+
+    groups = await db.list_groups(offset, limit)
+
+    rows = []
+
+    for g in groups:
+
+        rows.append([__import__("aiogram").types.InlineKeyboardButton(
+
+            text=f"{g['group_id']}. {g['title']}",
+
+            callback_data=f"admin:slot:create:group:{g['group_id']}"
+
+        )])
+
+    nav = []
+
+    if page > 0:
+
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:slot:create:pickgroup:page:{page-1}"))
+
+    if offset + limit < total:
+
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:slot:create:pickgroup:page:{page+1}"))
+
+    if nav:
+
+        rows.append(nav)
+
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:slots")])
+
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
+
+    await call.message.edit_text("Создание слота: выберите группу.", reply_markup=kb)
+
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("admin:slot:create:group:"))
+
+async def cb_admin_slot_create_group(call: CallbackQuery):
+
+    if not is_admin(call.from_user.id):
+
+        await call.answer("Нет доступа.", show_alert=True)
+
+        return
+
+    group_id = int(call.data.split(":")[-1])
+
+    g = await db.get_group(group_id)
+
+    if not g:
+
+        await call.answer("Группа не найдена.", show_alert=True)
+
+        return
+
+    draft = ADMIN_DRAFTS.setdefault(call.from_user.id, {"type": "slot"})
+
+    draft["group_id"] = group_id
+
+    rows = [
+        [__import__("aiogram").types.InlineKeyboardButton(text="Пн", callback_data="admin:slot:create:weekday:0")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Вт", callback_data="admin:slot:create:weekday:1")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Ср", callback_data="admin:slot:create:weekday:2")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Чт", callback_data="admin:slot:create:weekday:3")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Пт", callback_data="admin:slot:create:weekday:4")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Сб", callback_data="admin:slot:create:weekday:5")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Вс", callback_data="admin:slot:create:weekday:6")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:slot:create:pickgroup:page:0")],
+    ]
+
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
+
+    await call.message.edit_text(f"Создание слота для группы <b>{g['title']}</b>.\nВыберите день недели:", reply_markup=kb)
+
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("admin:slot:create:weekday:"))
+
+async def cb_admin_slot_create_weekday(call: CallbackQuery):
+
+    if not is_admin(call.from_user.id):
+
+        await call.answer("Нет доступа.", show_alert=True)
+
+        return
+
+    weekday = int(call.data.split(":")[-1])
+
+    draft = ADMIN_DRAFTS.setdefault(call.from_user.id, {"type": "slot"})
+
+    draft["weekday"] = weekday
+
+    await db.set_mode(call.from_user.id, "admin_slot_create:time")
 
     await call.message.edit_text(
-
-        "Создание слота.\n"
-
-        "Шаг 1/3: отправьте ID группы.\n"
-
+        "Шаг 2/3: отправьте время в формате HH:MM (например 19:00).\n"
         "/cancel — отмена."
-
     )
 
     await call.answer()
@@ -1771,55 +1911,45 @@ async def message_router(message: Message):
 
         draft = ADMIN_DRAFTS.setdefault(message.from_user.id, {"type":"slot"})
 
-        if step == "group_id":
+        if step == "time":
 
-            raw=(message.text or "").strip()
+            raw = (message.text or "").strip()
 
-            if not raw.isdigit():
+            if ":" not in raw:
 
-                await message.answer("Нужно число — ID группы.")
-
-                return
-
-            gid=int(raw)
-
-            g=await db.get_group(gid)
-
-            if not g:
-
-                await message.answer("Группа не найдена.")
+                await message.answer("Неверный формат времени. Пример: 19:00")
 
                 return
-
-            draft["group_id"]=gid
-
-            await db.set_mode(message.from_user.id, "admin_slot_create:starts_at")
-
-            await message.answer("Шаг 2/3: отправьте дату/время в формате YYYY-MM-DD HH:MM (например 2026-01-30 19:00)")
-
-            return
-
-        if step == "starts_at":
-
-            raw=(message.text or "").strip()
 
             try:
 
-                # interpret as local tz, store as iso with offset
+                hh, mm = raw.split(":", 1)
 
-                from datetime import datetime, timezone
+                hour = int(hh)
 
-                dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+                minute = int(mm)
 
-                dt = dt.replace(tzinfo=tz_now(TZ_OFFSET_HOURS).tzinfo)
+                if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+
+                    raise ValueError
 
             except Exception:
 
-                await message.answer("Неверный формат. Пример: 2026-01-30 19:00")
+                await message.answer("Неверный формат времени. Пример: 19:00")
 
                 return
 
-            draft["starts_at"]=dt.isoformat()
+            weekday = draft.get("weekday")
+
+            if weekday is None:
+
+                await message.answer("Не выбран день недели. Начните заново.")
+
+                return
+
+            dt = next_weekday_datetime(int(weekday), raw)
+
+            draft["starts_at"] = dt.isoformat()
 
             await db.set_mode(message.from_user.id, "admin_slot_create:capacity")
 
