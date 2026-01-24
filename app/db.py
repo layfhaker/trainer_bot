@@ -97,6 +97,17 @@ CREATE TABLE IF NOT EXISTS user_modes (
   user_id INTEGER PRIMARY KEY,
   mode TEXT
 );
+
+CREATE TABLE IF NOT EXISTS admins (
+  user_id INTEGER PRIMARY KEY,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_invites (
+  token TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1
+);
 """
 
 class DB:
@@ -401,6 +412,50 @@ class DB:
         async with self.connect() as db:
             await db.execute(sql, tuple(vals))
             await db.commit()
+
+    # ---------- admins ----------
+    async def add_admin(self, user_id: int) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO admins(user_id, created_at) VALUES (?, ?)",
+                (user_id, datetime.utcnow().isoformat()),
+            )
+            await db.commit()
+
+    async def is_admin(self, user_id: int) -> bool:
+        async with self.connect() as db:
+            cur = await db.execute("SELECT 1 FROM admins WHERE user_id=?", (user_id,))
+            row = await cur.fetchone()
+            return row is not None
+
+    async def list_admins(self) -> List[int]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall("SELECT user_id FROM admins")
+            return [int(r["user_id"]) for r in rows]
+
+    async def create_admin_invite(self, token: str) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "INSERT INTO admin_invites(token, created_at, is_active) VALUES (?,?,1)",
+                (token, datetime.utcnow().isoformat()),
+            )
+            await db.commit()
+
+    async def resolve_admin_invite(self, token: str) -> bool:
+        async with self.connect() as db:
+            cur = await db.execute(
+                "SELECT token FROM admin_invites WHERE token=? AND is_active=1",
+                (token,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return False
+            await db.execute(
+                "UPDATE admin_invites SET is_active=0 WHERE token=?",
+                (token,),
+            )
+            await db.commit()
+            return True
 
     async def reset_all(self) -> None:
         async with self.connect() as db:

@@ -25,6 +25,7 @@ def kb_admin_root():
     return ikb([
         [InlineKeyboardButton(text="👥 Группы", callback_data="admin:groups:page:0")],
         [InlineKeyboardButton(text="🔗 Пригласительные ссылки", callback_data="admin:invites")],
+        [InlineKeyboardButton(text="🔑 Пригласить админа", callback_data="admin:invite_admin")],
         [InlineKeyboardButton(text="📅 Занятия (слоты)", callback_data="admin:slots")],
         [InlineKeyboardButton(text="🏆 Турниры", callback_data="admin:tournaments")],
         [InlineKeyboardButton(text="💳 Оплата: реквизиты", callback_data="admin:payset")],

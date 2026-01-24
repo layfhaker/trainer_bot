@@ -82,6 +82,7 @@ db = DB(DATABASE_PATH)
 
 
 ADMIN_DRAFTS = {}  # user_id -> dict
+ADMIN_CACHE = set()
 
 
 
@@ -89,7 +90,7 @@ ADMIN_DRAFTS = {}  # user_id -> dict
 
 def is_admin(user_id: int) -> bool:
 
-    return user_id in ADMIN_IDS
+    return user_id in ADMIN_IDS or user_id in ADMIN_CACHE
 
 
 
@@ -164,7 +165,7 @@ async def start_handler(message: Message):
 
     await db.upsert_user(user.id, user.username or "", user.full_name or "")
 
-    # deep link: /start g_<token>
+    # deep link: /start g_<token> or /start a_<token>
 
     payload = (message.text or "").split(maxsplit=1)
 
@@ -185,6 +186,19 @@ async def start_handler(message: Message):
         else:
 
             await message.answer("Ссылка недействительна или отключена.")
+
+    elif len(payload) == 2 and payload[1].startswith("a_"):
+        token = payload[1][2:]
+        if is_admin(user.id):
+            await message.answer("Р’С‹ СѓР¶Рµ Р°РґРјРёРЅ.")
+        else:
+            ok = await db.resolve_admin_invite(token)
+            if ok:
+                await db.add_admin(user.id)
+                ADMIN_CACHE.add(user.id)
+                await message.answer("Р“РѕС‚РѕРІРѕ. Р’С‹ РґРѕР±Р°РІР»РµРЅС‹ РІ Р°РґРјРёРЅС‹.")
+            else:
+                await message.answer("РЎСЃС‹Р»РєР° РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅР° РёР»Рё РѕС‚РєР»СЋС‡РµРЅР°.")
 
     await show_main(message, user.id)
 
@@ -716,6 +730,23 @@ async def cb_admin_reset_confirm(call: CallbackQuery):
         return
     await db.reset_all()
     await call.message.edit_text("Сброс выполнен.", reply_markup=kb_admin_root())
+    await call.answer()
+
+@router.callback_query(F.data == "admin:invite_admin")
+async def cb_admin_invite_admin(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    token = secrets.token_urlsafe(8)
+    await db.create_admin_invite(token)
+    me = await bot.get_me()
+    link = f"https://t.me/{me.username}?start=a_{token}"
+    await call.message.edit_text(
+        "Ссылка для добавления администратора:\n"
+        f"{link}\n\n"
+        "Передайте эту ссылку человеку.",
+        reply_markup=kb_back("admin:root"),
+    )
     await call.answer()
 
 @router.callback_query(F.data.startswith("admin:groups:page:"))
@@ -2231,6 +2262,10 @@ async def message_router(message: Message):
 async def main():
 
     await db.init()
+    for uid in ADMIN_IDS:
+        await db.add_admin(uid)
+    global ADMIN_CACHE
+    ADMIN_CACHE = set(await db.list_admins()) | set(ADMIN_IDS)
 
     logger.info("DB initialized")
 
