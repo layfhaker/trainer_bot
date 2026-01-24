@@ -2052,14 +2052,14 @@ async def message_router(message: Message):
     if mode == "admin_payset:amount":
         raw = (message.text or "").strip()
         if not raw.isdigit():
-            await message.answer("????? ?????? ???? ??????.")
+            await message.answer("Сумма должна быть числом.")
             return
         amount = int(raw)
         s = await db.get_payment_settings()
         text_val = s.get("text", "")
         await db.set_payment_settings(text_val, amount)
         await db.set_mode(message.from_user.id, None)
-        await message.answer("????? ?????????.", reply_markup=kb_admin_root())
+        await message.answer("Сумма сохранена.", reply_markup=kb_admin_root())
         return
 
 
@@ -2067,7 +2067,7 @@ async def message_router(message: Message):
     if mode == "admin_bc:compose":
         txt = (message.text or "").strip()
         if not txt:
-            await message.answer("?????? ?????.")
+            await message.answer("Пустой текст.")
             return
 
         draft = ADMIN_DRAFTS.get(message.from_user.id, {})
@@ -2092,7 +2092,7 @@ async def message_router(message: Message):
 
         await db.set_mode(message.from_user.id, None)
         ADMIN_DRAFTS.pop(message.from_user.id, None)
-        await message.answer(f"???????? ??????????: {sent}", reply_markup=kb_admin_root())
+        await message.answer(f"Рассылка отправлена: {sent}", reply_markup=kb_admin_root())
         return
 
 
