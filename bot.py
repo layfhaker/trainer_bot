@@ -663,22 +663,37 @@ async def cb_tour_leave(call: CallbackQuery):
 # ---------------- admin root ----------------
 
 @router.callback_query(F.data == "admin:root")
-
 async def cb_admin_root(call: CallbackQuery):
-
     if not is_admin(call.from_user.id):
-
-        await call.answer("Нет доступа.", show_alert=True)
-
+        await call.answer("??? ???????.", show_alert=True)
         return
-
-    await call.message.edit_text("Админ меню:", reply_markup=kb_admin_root())
-
+    await call.message.edit_text("????? ????:", reply_markup=kb_admin_root())
     await call.answer()
 
+@router.callback_query(F.data == "admin:reset")
+async def cb_admin_reset(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    rows = [
+        [__import__("aiogram").types.InlineKeyboardButton(text="? ??, ???????? ???", callback_data="admin:reset:confirm")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="? ??????", callback_data="admin:root")],
+    ]
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
+    await call.message.edit_text(
+        "?? ???????? ??? ?????? ??????, ???????, ?????, ??????, ?????????????, ??????? ? ???????.",
+        reply_markup=kb,
+    )
+    await call.answer()
 
-
-# ----------- admin: groups list/create/manage -----------
+@router.callback_query(F.data == "admin:reset:confirm")
+async def cb_admin_reset_confirm(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    await db.reset_all()
+    await call.message.edit_text("????? ????????.", reply_markup=kb_admin_root())
+    await call.answer()
 
 @router.callback_query(F.data.startswith("admin:groups:page:"))
 
@@ -1445,70 +1460,169 @@ async def cb_admin_pay_toggle(call: CallbackQuery):
 # ----------- admin: payment settings -----------
 
 @router.callback_query(F.data == "admin:payset")
-
 async def cb_admin_payset(call: CallbackQuery):
-
     if not is_admin(call.from_user.id):
-
-        await call.answer("Нет доступа.", show_alert=True)
-
+        await call.answer("??? ???????.", show_alert=True)
         return
-
     s = await db.get_payment_settings()
-
+    amount = s.get("amount")
+    amount_text = f"?????: <b>{amount}</b>" if amount is not None else "?????: ?? ???????"
     text = (
-
-        "<b>Оплата: настройки</b>\n\n"
-
-        f"Текущий текст:\n{s.get('text','')}\n\n"
-
-        "Отправьте новым сообщением текст оплаты.\n"
-
-        "Если хотите указать сумму — добавьте отдельной строкой: <code>amount=3500</code>\n"
-
-        "/cancel — отмена"
-
+        "<b>??????: ?????????</b>\n\n"
+        f"??????? ?????:\n{s.get('text','')}\n\n"
+        f"{amount_text}\n\n"
+        "??????????? ?????? ???? ??? ?????????."
     )
-
-    await db.set_mode(call.from_user.id, "admin_payset:text")
-
-    await call.message.edit_text(text, reply_markup=kb_back("admin:root"))
-
+    rows = [
+        [__import__("aiogram").types.InlineKeyboardButton(text="?? ???????? ?????", callback_data="admin:payset:edit")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="?? ??????? ?????", callback_data="admin:payset:amount")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="?? ???????? ??????", callback_data="admin:payset:reset")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="?? ?????", callback_data="admin:root")],
+    ]
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
+    await call.message.edit_text(text, reply_markup=kb)
     await call.answer()
 
+@router.callback_query(F.data == "admin:payset:edit")
+async def cb_admin_payset_edit(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    await db.set_mode(call.from_user.id, "admin_payset:text")
+    await call.message.edit_text(
+        "????????? ????? ?????????? ????? ??????.\n"
+        "/cancel ? ??????",
+        reply_markup=kb_back("admin:payset"),
+    )
+    await call.answer()
 
+@router.callback_query(F.data == "admin:payset:amount")
+async def cb_admin_payset_amount(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    await db.set_mode(call.from_user.id, "admin_payset:amount")
+    await call.message.edit_text(
+        "????????? ????? ?????? (???????? 3500).\n"
+        "/cancel ? ??????",
+        reply_markup=kb_back("admin:payset"),
+    )
+    await call.answer()
 
-# ----------- admin: broadcast -----------
+@router.callback_query(F.data == "admin:payset:reset")
+async def cb_admin_payset_reset(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    rows = [
+        [__import__("aiogram").types.InlineKeyboardButton(text="? ??, ????????", callback_data="admin:payset:reset:confirm")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="? ??????", callback_data="admin:payset")],
+    ]
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
+    await call.message.edit_text(
+        "?? ???????, ??? ?????? ???????? ????? ? ????? ???????",
+        reply_markup=kb,
+    )
+    await call.answer()
+
+@router.callback_query(F.data == "admin:payset:reset:confirm")
+async def cb_admin_payset_reset_confirm(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    await db.set_payment_settings("??????: ???????? ? ???????.", None)
+    await call.message.edit_text("????????.\n????? ? ????? ?????? ???????.", reply_markup=kb_back("admin:payset"))
+    await call.answer()
+
 
 @router.callback_query(F.data == "admin:bc")
-
 async def cb_admin_bc(call: CallbackQuery):
-
     if not is_admin(call.from_user.id):
-
-        await call.answer("Нет доступа.", show_alert=True)
-
+        await call.answer("??? ???????.", show_alert=True)
         return
-
-    await db.set_mode(call.from_user.id, "admin_bc:compose")
-
-    await call.message.edit_text(
-
-        "Рассылка (текст).\n"
-
-        "Отправьте сообщение с текстом.\n"
-
-        "Можно начать строкой: <code>group_id=1</code> (если нужно только в одну группу).\n"
-
-        "Без group_id — всем.\n"
-
-        "/cancel — отмена"
-
-    )
-
+    rows = [
+        [__import__("aiogram").types.InlineKeyboardButton(text="?? ????", callback_data="admin:bc:all")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="?? ??????? ??????", callback_data="admin:bc:pickgroup:page:0")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="?? ?????", callback_data="admin:root")],
+    ]
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
+    await call.message.edit_text("????????: ???????? ???????????.", reply_markup=kb)
     await call.answer()
 
+@router.callback_query(F.data == "admin:bc:all")
+async def cb_admin_bc_all(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    draft = ADMIN_DRAFTS.setdefault(call.from_user.id, {"type": "bc"})
+    draft["target_gid"] = None
+    await db.set_mode(call.from_user.id, "admin_bc:compose")
+    await call.message.edit_text(
+        "???????? ????.\n"
+        "????????? ????????? ? ???????.\n"
+        "/cancel ? ??????",
+        reply_markup=kb_back("admin:bc"),
+    )
+    await call.answer()
 
+@router.callback_query(F.data.startswith("admin:bc:pickgroup:page:"))
+async def cb_admin_bc_pickgroup_page(call: CallbackQuery):
+    page = int(call.data.split(":")[-1])
+    await cb_admin_bc_pickgroup(call, page)
+
+async def cb_admin_bc_pickgroup(call: CallbackQuery, page: int):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    limit = 8
+    offset = page * limit
+    total = await db.count_groups()
+    if total == 0:
+        await call.message.edit_text(
+            "????? ???? ???. ??????? ???????? ??????.",
+            reply_markup=kb_back("admin:root"),
+        )
+        await call.answer()
+        return
+    groups = await db.list_groups(offset, limit)
+    rows = []
+    for g in groups:
+        rows.append([__import__("aiogram").types.InlineKeyboardButton(
+            text=f"{g['group_id']}. {g['title']}",
+            callback_data=f"admin:bc:group:{g['group_id']}"
+        )])
+    nav = []
+    if page > 0:
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="??", callback_data=f"admin:bc:pickgroup:page:{page-1}"))
+    if offset + limit < total:
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="??", callback_data=f"admin:bc:pickgroup:page:{page+1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="?? ?????", callback_data="admin:bc")])
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
+    await call.message.edit_text("???????? ?????? ??? ????????:", reply_markup=kb)
+    await call.answer()
+
+@router.callback_query(F.data.startswith("admin:bc:group:"))
+async def cb_admin_bc_group(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("??? ???????.", show_alert=True)
+        return
+    group_id = int(call.data.split(":")[-1])
+    g = await db.get_group(group_id)
+    if not g:
+        await call.answer("?????? ?? ???????.", show_alert=True)
+        return
+    draft = ADMIN_DRAFTS.setdefault(call.from_user.id, {"type": "bc"})
+    draft["target_gid"] = group_id
+    await db.set_mode(call.from_user.id, "admin_bc:compose")
+    await call.message.edit_text(
+        f"???????? ? ?????? <b>{g['title']}</b>.\n"
+        "????????? ????????? ? ???????.\n"
+        "/cancel ? ??????",
+        reply_markup=kb_back("admin:bc"),
+    )
+    await call.answer()
 
 # ---------------- message handler for admin modes ----------------
 
@@ -1936,78 +2050,51 @@ async def message_router(message: Message):
 
 
 
+    if mode == "admin_payset:amount":
+        raw = (message.text or "").strip()
+        if not raw.isdigit():
+            await message.answer("????? ?????? ???? ??????.")
+            return
+        amount = int(raw)
+        s = await db.get_payment_settings()
+        text_val = s.get("text", "")
+        await db.set_payment_settings(text_val, amount)
+        await db.set_mode(message.from_user.id, None)
+        await message.answer("????? ?????????.", reply_markup=kb_admin_root())
+        return
+
+
     # broadcast
-
     if mode == "admin_bc:compose":
-
-        txt=(message.text or "").strip()
-
+        txt = (message.text or "").strip()
         if not txt:
-
-            await message.answer("Пустой текст.")
-
+            await message.answer("?????? ?????.")
             return
 
-        target_gid=None
-
-        lines=[]
-
-        for line in txt.splitlines():
-
-            if line.strip().startswith("group_id="):
-
-                try:
-
-                    target_gid=int(line.split("=",1)[1].strip())
-
-                except Exception:
-
-                    await message.answer("group_id должен быть числом.")
-
-                    return
-
-            else:
-
-                lines.append(line)
-
-        final="\n".join(lines).strip()
+        draft = ADMIN_DRAFTS.get(message.from_user.id, {})
+        target_gid = draft.get("target_gid")
 
         async def iter_users():
-
             async with await db.connect() as conn:
-
                 if target_gid is None:
-
                     rows = await conn.execute_fetchall("SELECT user_id FROM users")
-
                 else:
-
                     rows = await conn.execute_fetchall("SELECT user_id FROM users WHERE group_id=?", (target_gid,))
-
                 for r in rows:
-
                     yield int(r["user_id"])
 
-        sent=0
-
+        sent = 0
         async for uid in iter_users():
-
             try:
-
-                await bot.send_message(uid, final)
-
-                sent+=1
-
+                await bot.send_message(uid, txt)
+                sent += 1
             except Exception:
-
                 pass
 
         await db.set_mode(message.from_user.id, None)
-
-        await message.answer(f"Рассылка отправлена: {sent}", reply_markup=kb_admin_root())
-
+        ADMIN_DRAFTS.pop(message.from_user.id, None)
+        await message.answer(f"???????? ??????????: {sent}", reply_markup=kb_admin_root())
         return
-
 
 
 # ---------------- main ----------------

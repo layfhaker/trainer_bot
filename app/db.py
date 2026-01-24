@@ -402,6 +402,28 @@ class DB:
             await db.execute(sql, tuple(vals))
             await db.commit()
 
+    async def reset_all(self) -> None:
+        async with self.connect() as db:
+            await db.execute("DELETE FROM payments")
+            await db.execute("DELETE FROM bookings")
+            await db.execute("DELETE FROM tournament_groups")
+            await db.execute("DELETE FROM tournaments")
+            await db.execute("DELETE FROM training_slots")
+            await db.execute("DELETE FROM invites")
+            await db.execute("DELETE FROM group_settings")
+            await db.execute("DELETE FROM groups")
+            await db.execute("DELETE FROM users")
+            await db.execute("DELETE FROM user_modes")
+            await db.execute(
+                "UPDATE payment_settings SET text=?, amount=?, updated_at=? WHERE id=1",
+                ("Оплата: уточните у тренера.", None, datetime.utcnow().isoformat()),
+            )
+            await db.execute(
+                "DELETE FROM sqlite_sequence WHERE name IN "
+                "('groups','training_slots','tournaments','bookings','payments')"
+            )
+            await db.commit()
+
     async def count_active_bookings(self, entity_type: str, entity_id: int) -> int:
         async with self.connect() as db:
             cur = await db.execute(

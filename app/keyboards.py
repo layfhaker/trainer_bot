@@ -29,6 +29,7 @@ def kb_admin_root():
         [InlineKeyboardButton(text="🏆 Турниры", callback_data="admin:tournaments")],
         [InlineKeyboardButton(text="💳 Оплата: реквизиты", callback_data="admin:payset")],
         [InlineKeyboardButton(text="📣 Рассылка", callback_data="admin:bc")],
+        [InlineKeyboardButton(text="🧹 Сбросить всё", callback_data="admin:reset")],
         [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="main")],
     ])
 
