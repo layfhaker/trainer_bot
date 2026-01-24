@@ -2074,7 +2074,7 @@ async def message_router(message: Message):
         target_gid = draft.get("target_gid")
 
         async def iter_users():
-            async with await db.connect() as conn:
+            async with db.connect() as conn:
                 if target_gid is None:
                     rows = await conn.execute_fetchall("SELECT user_id FROM users")
                 else:
