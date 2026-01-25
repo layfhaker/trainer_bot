@@ -133,11 +133,11 @@ async def show_main(target: Message | CallbackQuery, user_id: int, text: Optiona
 
     gid = u.get("group_id") if u else None
 
-    prefix = "Р’С‹Р±РµСЂРёС‚Рµ РґРµР№СЃС‚РІРёРµ:"
+    prefix = "Выберите действие:"
 
     if gid is None:
 
-        prefix = "Р’С‹ РЅРµ РїСЂРёРІСЏР·Р°РЅС‹ Рє РіСЂСѓРїРїРµ. РџРѕРїСЂРѕСЃРёС‚Рµ Сѓ С‚СЂРµРЅРµСЂР° СЃСЃС‹Р»РєСѓ-РїСЂРёРіР»Р°С€РµРЅРёРµ."
+        prefix = "Вы не привязаны к группе. Попросите у тренера ссылку-приглашение."
 
     msg_text = text or prefix
 
@@ -181,24 +181,24 @@ async def start_handler(message: Message):
 
             g = await db.get_group(gid)
 
-            await message.answer(f"Р“РѕС‚РѕРІРѕ. Р’С‹ РґРѕР±Р°РІР»РµРЅС‹ РІ РіСЂСѓРїРїСѓ: <b>{g['title']}</b>")
+            await message.answer(f"Готово. Вы добавлены в группу: <b>{g['title']}</b>")
 
         else:
 
-            await message.answer("РЎСЃС‹Р»РєР° РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅР° РёР»Рё РѕС‚РєР»СЋС‡РµРЅР°.")
+            await message.answer("Ссылка недействительна или отключена.")
 
     elif len(payload) == 2 and payload[1].startswith("a_"):
         token = payload[1][2:]
         if is_admin(user.id):
-            await message.answer("Р вЂ™РЎвЂ№ РЎС“Р В¶Р Вµ Р В°Р Т‘Р СР С‘Р Р….")
+            await message.answer("Вы уже админ.")
         else:
             ok = await db.resolve_admin_invite(token)
             if ok:
                 await db.add_admin(user.id)
                 ADMIN_CACHE.add(user.id)
-                await message.answer("Р вЂњР С•РЎвЂљР С•Р Р†Р С•. Р вЂ™РЎвЂ№ Р Т‘Р С•Р В±Р В°Р Р†Р В»Р ВµР Р…РЎвЂ№ Р Р† Р В°Р Т‘Р СР С‘Р Р…РЎвЂ№.")
+                await message.answer("Готово. Вы добавлены в админы.")
             else:
-                await message.answer("Р РЋРЎРѓРЎвЂ№Р В»Р С”Р В° Р Р…Р ВµР Т‘Р ВµР в„–РЎРѓРЎвЂљР Р†Р С‘РЎвЂљР ВµР В»РЎРЉР Р…Р В° Р С‘Р В»Р С‘ Р С•РЎвЂљР С”Р В»РЎР‹РЎвЂЎР ВµР Р…Р В°.")
+                await message.answer("Ссылка недействительна или отключена.")
 
     await show_main(message, user.id)
 
@@ -212,7 +212,7 @@ async def cancel_any(message: Message):
 
     ADMIN_DRAFTS.pop(message.from_user.id, None)
 
-    await message.answer("РћС‚РјРµРЅРµРЅРѕ.", reply_markup=kb_main(is_admin(message.from_user.id)))
+    await message.answer("Отменено.", reply_markup=kb_main(is_admin(message.from_user.id)))
 
 
 
@@ -257,7 +257,7 @@ async def cb_schedule(call: CallbackQuery):
 
     if not gid:
 
-        await call.answer("РЎРЅР°С‡Р°Р»Р° РЅСѓР¶РЅРѕ Р±С‹С‚СЊ РІ РіСЂСѓРїРїРµ.", show_alert=True)
+        await call.answer("Сначала нужно быть в группе.", show_alert=True)
 
         return
 
@@ -267,7 +267,7 @@ async def cb_schedule(call: CallbackQuery):
 
     if not file_id:
 
-        await call.message.edit_text("Р Р°СЃРїРёСЃР°РЅРёРµ РµС‰С‘ РЅРµ Р·Р°РіСЂСѓР¶РµРЅРѕ.", reply_markup=kb_back("main"))
+        await call.message.edit_text("Расписание ещё не загружено.", reply_markup=kb_back("main"))
 
         await call.answer()
 
@@ -275,7 +275,7 @@ async def cb_schedule(call: CallbackQuery):
 
     await call.message.edit_text("\u0420\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043e\u0442\u043a\u0440\u044b\u0442\u043e \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u044b\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c.", reply_markup=kb_back("main"))
 
-    await bot.send_photo(call.from_user.id, photo=file_id, caption=f"Р Р°СЃРїРёСЃР°РЅРёРµ: <b>{g['title']}</b>", reply_markup=kb_back("main"))
+    await bot.send_photo(call.from_user.id, photo=file_id, caption=f"Расписание: <b>{g['title']}</b>", reply_markup=kb_back("main"))
 
     await call.answer()
 
@@ -293,7 +293,7 @@ async def cb_train_list(call: CallbackQuery):
 
     if not gid:
 
-        await call.answer("РЎРЅР°С‡Р°Р»Р° РЅСѓР¶РЅРѕ Р±С‹С‚СЊ РІ РіСЂСѓРїРїРµ.", show_alert=True)
+        await call.answer("Сначала нужно быть в группе.", show_alert=True)
 
         return
 
@@ -307,13 +307,13 @@ async def cb_train_list(call: CallbackQuery):
 
     if not slots:
 
-        await call.message.edit_text("РџРѕРєР° РЅРµС‚ РґРѕСЃС‚СѓРїРЅС‹С… Р·Р°РЅСЏС‚РёР№.", reply_markup=kb_back("main"))
+        await call.message.edit_text("Пока нет доступных занятий.", reply_markup=kb_back("main"))
 
         await call.answer()
 
         return
 
-    lines = ["<b>Р‘Р»РёР¶Р°Р№С€РёРµ Р·Р°РЅСЏС‚РёСЏ</b>:"]
+    lines = ["<b>Ближайшие занятия</b>:"]
 
     # show as buttons list (first 10) by edit message with inline keyboard per slot
 
@@ -325,13 +325,13 @@ async def cb_train_list(call: CallbackQuery):
 
         rows.append([__import__("aiogram").types.InlineKeyboardButton(
 
-            text=f"{fmt_dt(dt)} (Р»РёРјРёС‚ {s['capacity']})",
+            text=f"{fmt_dt(dt)} (лимит {s['capacity']})",
 
             callback_data=f"train:open:{s['slot_id']}"
 
         )])
 
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="main")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="main")])
 
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -351,7 +351,7 @@ async def cb_train_open(call: CallbackQuery):
 
     if not slot or not slot.get("is_active"):
 
-        await call.answer("РЎР»РѕС‚ РЅРµ РЅР°Р№РґРµРЅ.", show_alert=True)
+        await call.answer("Слот не найден.", show_alert=True)
 
         return
 
@@ -359,7 +359,7 @@ async def cb_train_open(call: CallbackQuery):
 
     if not u or u.get("group_id") != slot["group_id"]:
 
-        await call.answer("Р­С‚Рѕ Р·Р°РЅСЏС‚РёРµ РЅРµ РІР°С€РµР№ РіСЂСѓРїРїС‹.", show_alert=True)
+        await call.answer("Это занятие не вашей группы.", show_alert=True)
 
         return
 
@@ -393,35 +393,35 @@ async def cb_train_open(call: CallbackQuery):
 
     text = (
 
-        f"<b>Р—Р°РЅСЏС‚РёРµ</b>\n"
+        f"<b>Занятие</b>\n"
 
-        f"рџ•’ {fmt_dt(starts)}\n"
+        f"🕒 {fmt_dt(starts)}\n"
 
-        f"рџ‘Ґ РњРµСЃС‚: {booked}/{slot['capacity']}\n"
+        f"👥 Мест: {booked}/{slot['capacity']}\n"
 
     )
 
     if slot.get("note"):
 
-        text += f"рџ“ќ {slot['note']}\n"
+        text += f"📝 {slot['note']}\n"
 
     if now < open_dt:
 
-        text += f"\nР—Р°РїРёСЃСЊ РѕС‚РєСЂРѕРµС‚СЃСЏ: <b>{fmt_dt(open_dt)}</b>"
+        text += f"\nЗапись откроется: <b>{fmt_dt(open_dt)}</b>"
 
     elif now >= close_dt:
 
-        text += f"\nР—Р°РїРёСЃСЊ Р·Р°РєСЂС‹С‚Р°."
+        text += f"\nЗапись закрыта."
 
     if my_booking:
 
         if now < cancel_deadline:
 
-            text += f"\n\nР’С‹ Р·Р°РїРёСЃР°РЅС‹. РћС‚РјРµРЅР° РІРѕР·РјРѕР¶РЅР° РґРѕ <b>{fmt_dt(cancel_deadline)}</b>."
+            text += f"\n\nВы записаны. Отмена возможна до <b>{fmt_dt(cancel_deadline)}</b>."
 
         else:
 
-            text += f"\n\nР’С‹ Р·Р°РїРёСЃР°РЅС‹. РћС‚РјРµРЅР° СѓР¶Рµ РЅРµРґРѕСЃС‚СѓРїРЅР°."
+            text += f"\n\nВы записаны. Отмена уже недоступна."
 
     await call.message.edit_text(text, reply_markup=kb_slot_actions(slot_id, can_join, can_leave))
 
@@ -439,7 +439,7 @@ async def cb_train_join(call: CallbackQuery):
 
     if not slot:
 
-        await call.answer("РЎР»РѕС‚ РЅРµ РЅР°Р№РґРµРЅ.", show_alert=True)
+        await call.answer("Слот не найден.", show_alert=True)
 
         return
 
@@ -447,7 +447,7 @@ async def cb_train_join(call: CallbackQuery):
 
     if not u or u.get("group_id") != slot["group_id"]:
 
-        await call.answer("Р­С‚Рѕ Р·Р°РЅСЏС‚РёРµ РЅРµ РІР°С€РµР№ РіСЂСѓРїРїС‹.", show_alert=True)
+        await call.answer("Это занятие не вашей группы.", show_alert=True)
 
         return
 
@@ -463,13 +463,13 @@ async def cb_train_join(call: CallbackQuery):
 
     if now < open_dt:
 
-        await call.answer(f"Р—Р°РїРёСЃСЊ РѕС‚РєСЂРѕРµС‚СЃСЏ {fmt_dt(open_dt)}", show_alert=True)
+        await call.answer(f"Запись откроется {fmt_dt(open_dt)}", show_alert=True)
 
         return
 
     if now >= close_dt:
 
-        await call.answer("Р—Р°РїРёСЃСЊ Р·Р°РєСЂС‹С‚Р°.", show_alert=True)
+        await call.answer("Запись закрыта.", show_alert=True)
 
         return
 
@@ -477,7 +477,7 @@ async def cb_train_join(call: CallbackQuery):
 
     if booked >= slot["capacity"]:
 
-        await call.answer("РњРµСЃС‚ РЅРµС‚.", show_alert=True)
+        await call.answer("Мест нет.", show_alert=True)
 
         return
 
@@ -485,13 +485,13 @@ async def cb_train_join(call: CallbackQuery):
 
     if existing:
 
-        await call.answer("Р’С‹ СѓР¶Рµ Р·Р°РїРёСЃР°РЅС‹.", show_alert=True)
+        await call.answer("Вы уже записаны.", show_alert=True)
 
         return
 
     await db.create_booking(call.from_user.id, "training", slot_id)
 
-    await call.answer("Р—Р°РїРёСЃР°Р» вњ…")
+    await call.answer("Записал ✅")
 
     await cb_train_open(call)
 
@@ -507,7 +507,7 @@ async def cb_train_leave(call: CallbackQuery):
 
     if not slot:
 
-        await call.answer("РЎР»РѕС‚ РЅРµ РЅР°Р№РґРµРЅ.", show_alert=True)
+        await call.answer("Слот не найден.", show_alert=True)
 
         return
 
@@ -523,19 +523,19 @@ async def cb_train_leave(call: CallbackQuery):
 
     if not booking:
 
-        await call.answer("Р’С‹ РЅРµ Р·Р°РїРёСЃР°РЅС‹.", show_alert=True)
+        await call.answer("Вы не записаны.", show_alert=True)
 
         return
 
     if now >= cancel_deadline:
 
-        await call.answer("РћС‚РјРµРЅР° СѓР¶Рµ РЅРµРґРѕСЃС‚СѓРїРЅР°.", show_alert=True)
+        await call.answer("Отмена уже недоступна.", show_alert=True)
 
         return
 
     await db.cancel_booking(booking["booking_id"])
 
-    await call.answer("РћС‚РјРµРЅРёР» вќЊ")
+    await call.answer("Отменил ❌")
 
     await cb_train_open(call)
 
@@ -547,26 +547,26 @@ async def cb_tour_list(call: CallbackQuery):
     u = await db.get_user(call.from_user.id)
     gid = u.get("group_id") if u else None
     if not gid:
-        await call.answer("РЎРЅР°С‡Р°Р»Р° РЅСѓР¶РЅРѕ Р±С‹С‚СЊ РІ РіСЂСѓРїРїРµ.", show_alert=True)
+        await call.answer("Сначала нужно быть в группе.", show_alert=True)
         return
     now = tz_now(TZ_OFFSET_HOURS)
     from_iso = (now - timedelta(days=1)).isoformat()
     to_iso = (now + timedelta(days=30)).isoformat()
     tournaments = await db.list_tournaments_for_groups([gid], from_iso, to_iso, limit=30)
     if not tournaments:
-        await call.message.edit_text("РџРѕРєР° РЅРµС‚ РґРѕСЃС‚СѓРїРЅС‹С… С‚СѓСЂРЅРёСЂРѕРІ.", reply_markup=kb_back("main"))
+        await call.message.edit_text("Пока нет доступных турниров.", reply_markup=kb_back("main"))
         await call.answer()
         return
     rows = []
     for t in tournaments[:12]:
         dt = parse_dt(t["starts_at"])
         rows.append([__import__("aiogram").types.InlineKeyboardButton(
-            text=f"{fmt_dt(dt)} вЂ” {t['title']}",
+            text=f"{fmt_dt(dt)} — {t['title']}",
             callback_data=f"tour:open:{t['tournament_id']}"
         )])
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="main")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="main")])
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-    await call.message.edit_text("<b>РўСѓСЂРЅРёСЂС‹</b>:", reply_markup=kb)
+    await call.message.edit_text("<b>Турниры</b>:", reply_markup=kb)
     await call.answer()
 
 @router.callback_query(F.data.startswith("tour:open:"))
@@ -574,16 +574,16 @@ async def cb_tour_open(call: CallbackQuery):
     tournament_id = int(call.data.split(":")[-1])
     t = await db.get_tournament(tournament_id)
     if not t or not t.get("is_active"):
-        await call.answer("РўСѓСЂРЅРёСЂ РЅРµ РЅР°Р№РґРµРЅ.", show_alert=True)
+        await call.answer("Турнир не найден.", show_alert=True)
         return
     u = await db.get_user(call.from_user.id)
     gid = u.get("group_id") if u else None
     if not gid:
-        await call.answer("РЎРЅР°С‡Р°Р»Р° РЅСѓР¶РЅРѕ Р±С‹С‚СЊ РІ РіСЂСѓРїРїРµ.", show_alert=True)
+        await call.answer("Сначала нужно быть в группе.", show_alert=True)
         return
     groups = await db.list_tournament_groups(tournament_id)
     if gid not in groups:
-        await call.answer("Р­С‚РѕС‚ С‚СѓСЂРЅРёСЂ РЅРµ РґР»СЏ РІР°С€РµР№ РіСЂСѓРїРїС‹.", show_alert=True)
+        await call.answer("Этот турнир не для вашей группы.", show_alert=True)
         return
 
     starts = parse_dt(t["starts_at"])
@@ -604,24 +604,24 @@ async def cb_tour_open(call: CallbackQuery):
 
     text = (
         f"<b>{t['title']}</b>\n"
-        f"рџ•’ {fmt_dt(starts)}\n"
-        f"рџ‘Ґ РњРµСЃС‚: {booked}/{t['capacity']}\n"
+        f"🕒 {fmt_dt(starts)}\n"
+        f"👥 Мест: {booked}/{t['capacity']}\n"
     )
     if waitlist_limit > 0:
-        text += f"рџ“‹ Р›РёСЃС‚ РѕР¶РёРґР°РЅРёСЏ: {waitlist_count}/{waitlist_limit}\n"
+        text += f"📋 Лист ожидания: {waitlist_count}/{waitlist_limit}\n"
     if t.get("description"):
-        text += f"рџ“ќ {t['description']}\n"
+        text += f"📝 {t['description']}\n"
     if now >= close_dt:
-        text += "\nР—Р°РїРёСЃСЊ Р·Р°РєСЂС‹С‚Р°."
+        text += "\nЗапись закрыта."
     if my_booking:
         if is_waitlist:
-            text += "\n\nР’С‹ РІ Р»РёСЃС‚Рµ РѕР¶РёРґР°РЅРёСЏ."
+            text += "\n\nВы в листе ожидания."
         else:
-            text += "\n\nР’С‹ Р·Р°РїРёСЃР°РЅС‹."
+            text += "\n\nВы записаны."
         if now < cancel_deadline:
-            text += f" РћС‚РјРµРЅР° РІРѕР·РјРѕР¶РЅР° РґРѕ <b>{fmt_dt(cancel_deadline)}</b>."
+            text += f" Отмена возможна до <b>{fmt_dt(cancel_deadline)}</b>."
         else:
-            text += " РћС‚РјРµРЅР° СѓР¶Рµ РЅРµРґРѕСЃС‚СѓРїРЅР°."
+            text += " Отмена уже недоступна."
 
     await call.message.edit_text(text, reply_markup=kb_tour_actions(tournament_id, can_join, can_leave, is_waitlist))
     await call.answer()
@@ -631,38 +631,38 @@ async def cb_tour_join(call: CallbackQuery):
     tournament_id = int(call.data.split(":")[-1])
     t = await db.get_tournament(tournament_id)
     if not t:
-        await call.answer("РўСѓСЂРЅРёСЂ РЅРµ РЅР°Р№РґРµРЅ.", show_alert=True)
+        await call.answer("Турнир не найден.", show_alert=True)
         return
     u = await db.get_user(call.from_user.id)
     gid = u.get("group_id") if u else None
     if not gid:
-        await call.answer("РЎРЅР°С‡Р°Р»Р° РЅСѓР¶РЅРѕ Р±С‹С‚СЊ РІ РіСЂСѓРїРїРµ.", show_alert=True)
+        await call.answer("Сначала нужно быть в группе.", show_alert=True)
         return
     groups = await db.list_tournament_groups(tournament_id)
     if gid not in groups:
-        await call.answer("Р­С‚РѕС‚ С‚СѓСЂРЅРёСЂ РЅРµ РґР»СЏ РІР°С€РµР№ РіСЂСѓРїРїС‹.", show_alert=True)
+        await call.answer("Этот турнир не для вашей группы.", show_alert=True)
         return
     starts = parse_dt(t["starts_at"])
     close_dt = compute_close_datetime(starts, t["close_mode"], t.get("close_minutes_before"))
     now = tz_now(TZ_OFFSET_HOURS)
     if now >= close_dt:
-        await call.answer("Р—Р°РїРёСЃСЊ Р·Р°РєСЂС‹С‚Р°.", show_alert=True)
+        await call.answer("Запись закрыта.", show_alert=True)
         return
     existing = await db.get_user_booking_any(call.from_user.id, "tournament", tournament_id)
     if existing:
-        await call.answer("Р’С‹ СѓР¶Рµ Р·Р°РїРёСЃР°РЅС‹.", show_alert=True)
+        await call.answer("Вы уже записаны.", show_alert=True)
         return
     booked = await db.count_active_bookings("tournament", tournament_id)
     waitlist_count = await db.count_bookings("tournament", tournament_id, "waitlist")
     waitlist_limit = int(t.get("waitlist_limit") or 0)
     if booked < t["capacity"]:
         await db.create_booking(call.from_user.id, "tournament", tournament_id, status="active")
-        await call.answer("Р—Р°РїРёСЃР°Р» ?")
+        await call.answer("Записал ?")
     elif waitlist_limit > 0 and waitlist_count < waitlist_limit:
         await db.create_booking(call.from_user.id, "tournament", tournament_id, status="waitlist")
-        await call.answer("Р”РѕР±Р°РІРёР» РІ Р»РёСЃС‚ РѕР¶РёРґР°РЅРёСЏ ?")
+        await call.answer("Добавил в лист ожидания ?")
     else:
-        await call.answer("РњРµСЃС‚ РЅРµС‚.", show_alert=True)
+        await call.answer("Мест нет.", show_alert=True)
         return
     await cb_tour_open(call)
 
@@ -671,17 +671,17 @@ async def cb_tour_leave(call: CallbackQuery):
     tournament_id = int(call.data.split(":")[-1])
     t = await db.get_tournament(tournament_id)
     if not t:
-        await call.answer("РўСѓСЂРЅРёСЂ РЅРµ РЅР°Р№РґРµРЅ.", show_alert=True)
+        await call.answer("Турнир не найден.", show_alert=True)
         return
     starts = parse_dt(t["starts_at"])
     cancel_deadline = compute_cancel_deadline(starts, t["cancel_minutes_before"])
     now = tz_now(TZ_OFFSET_HOURS)
     booking = await db.get_user_booking_any(call.from_user.id, "tournament", tournament_id)
     if not booking:
-        await call.answer("Р’С‹ РЅРµ Р·Р°РїРёСЃР°РЅС‹.", show_alert=True)
+        await call.answer("Вы не записаны.", show_alert=True)
         return
     if now >= cancel_deadline:
-        await call.answer("РћС‚РјРµРЅР° СѓР¶Рµ РЅРµРґРѕСЃС‚СѓРїРЅР°.", show_alert=True)
+        await call.answer("Отмена уже недоступна.", show_alert=True)
         return
     await db.cancel_booking(booking["booking_id"])
 
@@ -692,36 +692,36 @@ async def cb_tour_leave(call: CallbackQuery):
             try:
                 await bot.send_message(
                     next_wait["user_id"],
-                    f"Р’С‹ РїРµСЂРµРІРµРґРµРЅС‹ РёР· Р»РёСЃС‚Р° РѕР¶РёРґР°РЅРёСЏ РІ Р·Р°РїРёСЃСЊ РЅР° С‚СѓСЂРЅРёСЂ: <b>{t['title']}</b>.\n"
-                    f"Р”Р°С‚Р°: {fmt_dt(starts)}"
+                    f"Вы переведены из листа ожидания в запись на турнир: <b>{t['title']}</b>.\n"
+                    f"Дата: {fmt_dt(starts)}"
                 )
             except Exception:
                 pass
 
-    await call.answer("РћС‚РјРµРЅРёР» ?")
+    await call.answer("Отменил ?")
     await cb_tour_open(call)
 # ---------------- admin root ----------------
 
 @router.callback_query(F.data == "admin:root")
 async def cb_admin_root(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
-    await call.message.edit_text("РђРґРјРёРЅ РјРµРЅСЋ:", reply_markup=kb_admin_root())
+    await call.message.edit_text("Админ меню:", reply_markup=kb_admin_root())
     await call.answer()
 
 @router.callback_query(F.data == "admin:reset")
 async def cb_admin_reset(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="вњ… Р”Р°, СЃР±СЂРѕСЃРёС‚СЊ РІСЃС‘", callback_data="admin:reset:confirm")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="вќЊ РћС‚РјРµРЅР°", callback_data="admin:root")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="✅ Да, сбросить всё", callback_data="admin:reset:confirm")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="❌ Отмена", callback_data="admin:root")],
     ]
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
     await call.message.edit_text(
-        "Р’С‹ СѓРІРµСЂРµРЅС‹? Р­С‚Рѕ СѓРґР°Р»РёС‚ РіСЂСѓРїРїС‹, С‚СѓСЂРЅРёСЂС‹, СЃР»РѕС‚С‹, Р·Р°РїРёСЃРё, РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№, РёРЅРІР°Р№С‚С‹ Рё РїР»Р°С‚РµР¶Рё.",
+        "Вы уверены? Это удалит группы, турниры, слоты, записи, пользователей, инвайты и платежи.",
         reply_markup=kb,
     )
     await call.answer()
@@ -729,25 +729,25 @@ async def cb_admin_reset(call: CallbackQuery):
 @router.callback_query(F.data == "admin:reset:confirm")
 async def cb_admin_reset_confirm(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     await db.reset_all()
-    await call.message.edit_text("РЎР±СЂРѕСЃ РІС‹РїРѕР»РЅРµРЅ.", reply_markup=kb_admin_root())
+    await call.message.edit_text("Сброс выполнен.", reply_markup=kb_admin_root())
     await call.answer()
 
 @router.callback_query(F.data == "admin:invite_admin")
 async def cb_admin_invite_admin(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     token = secrets.token_urlsafe(8)
     await db.create_admin_invite(token)
     me = await bot.get_me()
     link = f"https://t.me/{me.username}?start=a_{token}"
     await call.message.edit_text(
-        "РЎСЃС‹Р»РєР° РґР»СЏ РґРѕР±Р°РІР»РµРЅРёСЏ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°:\n"
+        "Ссылка для добавления администратора:\n"
         f"{link}\n\n"
-        "РџРµСЂРµРґР°Р№С‚Рµ СЌС‚Сѓ СЃСЃС‹Р»РєСѓ С‡РµР»РѕРІРµРєСѓ.",
+        "Передайте эту ссылку человеку.",
         reply_markup=kb_back("admin:root"),
     )
     await call.answer()
@@ -758,7 +758,7 @@ async def cb_admin_groups(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -790,23 +790,23 @@ async def cb_admin_groups(call: CallbackQuery):
 
     if page > 0:
 
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:groups:page:{page-1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:groups:page:{page-1}"))
 
     if offset + limit < total:
 
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:groups:page:{page+1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:groups:page:{page+1}"))
 
     if nav:
 
         rows.append(nav)
 
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="вћ• РЎРѕР·РґР°С‚СЊ РіСЂСѓРїРїСѓ", callback_data="admin:group:create")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="➕ Создать группу", callback_data="admin:group:create")])
 
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:root")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")])
 
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
 
-    await call.message.edit_text("<b>Р“СЂСѓРїРїС‹</b>:", reply_markup=kb)
+    await call.message.edit_text("<b>Группы</b>:", reply_markup=kb)
 
     await call.answer()
 
@@ -818,13 +818,13 @@ async def cb_admin_group_create(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
     await db.set_mode(call.from_user.id, "admin_create_group:title")
 
-    await call.message.edit_text("Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ РіСЂСѓРїРїС‹ (СЃРѕРѕР±С‰РµРЅРёРµРј).\n/cancel вЂ” РѕС‚РјРµРЅР°.", reply_markup=kb_back("admin:groups:page:0"))
+    await call.message.edit_text("Введите название группы (сообщением).\n/cancel — отмена.", reply_markup=kb_back("admin:groups:page:0"))
 
     await call.answer()
 
@@ -836,7 +836,7 @@ async def cb_admin_group_open(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -846,13 +846,13 @@ async def cb_admin_group_open(call: CallbackQuery):
 
     if not g:
 
-        await call.answer("Р“СЂСѓРїРїР° РЅРµ РЅР°Р№РґРµРЅР°.", show_alert=True)
+        await call.answer("Группа не найдена.", show_alert=True)
 
         return
 
     await call.message.edit_text(
 
-        f"<b>Р“СЂСѓРїРїР°</b>: {g['title']}\nID: {group_id}",
+        f"<b>Группа</b>: {g['title']}\nID: {group_id}",
 
         reply_markup=kb_group_actions(group_id)
 
@@ -868,7 +868,7 @@ async def cb_admin_group_sched(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -876,7 +876,7 @@ async def cb_admin_group_sched(call: CallbackQuery):
 
     await db.set_mode(call.from_user.id, f"admin_group_sched:{group_id}")
 
-    await call.message.edit_text("РџСЂРёС€Р»РёС‚Рµ РєР°СЂС‚РёРЅРєСѓ СЂР°СЃРїРёСЃР°РЅРёСЏ (С„РѕС‚Рѕ) РґР»СЏ СЌС‚РѕР№ РіСЂСѓРїРїС‹.\n/cancel вЂ” РѕС‚РјРµРЅР°.")
+    await call.message.edit_text("Пришлите картинку расписания (фото) для этой группы.\n/cancel — отмена.")
 
     await call.answer()
 
@@ -931,7 +931,7 @@ async def build_group_settings_view(group_id: int):
 @router.callback_query(F.data.startswith("admin:group:") & F.data.endswith(":settings"))
 async def cb_admin_group_settings(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќСЋРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нюет доступа.", show_alert=True)
         return
     group_id = int(call.data.split(":")[2])
     text, kb = await build_group_settings_view(group_id)
@@ -1040,7 +1040,7 @@ async def cb_admin_group_users(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1058,7 +1058,7 @@ async def cb_admin_group_users(call: CallbackQuery):
 
     users = await db.list_group_users(group_id, offset, limit)
 
-    lines=[f"<b>РЈС‡РµРЅРёРєРё РіСЂСѓРїРїС‹ {group_id}</b> ({total}):"]
+    lines=[f"<b>Ученики группы {group_id}</b> ({total}):"]
 
     for i, u in enumerate(users, start=offset+1):
 
@@ -1070,13 +1070,13 @@ async def cb_admin_group_users(call: CallbackQuery):
 
     nav=[]
 
-    if page>0: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:group:{group_id}:users:page:{page-1}"))
+    if page>0: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:group:{group_id}:users:page:{page-1}"))
 
-    if offset+limit<total: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:group:{group_id}:users:page:{page+1}"))
+    if offset+limit<total: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:group:{group_id}:users:page:{page+1}"))
 
     if nav: rows.append(nav)
 
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data=f"admin:group:{group_id}")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin:group:{group_id}")])
 
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1090,16 +1090,16 @@ async def cb_admin_group_users(call: CallbackQuery):
 @router.callback_query(F.data == "admin:invites")
 async def cb_admin_invites(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     total = await db.count_groups()
     if total == 0:
         rows = [
-            [__import__("aiogram").types.InlineKeyboardButton(text="РЎРѕР·РґР°С‚СЊ РіСЂСѓРїРїСѓ", callback_data="admin:group:create")],
-            [__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:root")],
+            [__import__("aiogram").types.InlineKeyboardButton(text="Создать группу", callback_data="admin:group:create")],
+            [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
         ]
         kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-        await call.message.edit_text("Р“СЂСѓРїРї РµС‰С‘ РЅРµС‚. РЎРѕР·РґР°Р№С‚Рµ РіСЂСѓРїРїСѓ.", reply_markup=kb)
+        await call.message.edit_text("Групп ещё нет. Создайте группу.", reply_markup=kb)
         await call.answer()
         return
     await cb_admin_invite_pickgroup(call, page=0)
@@ -1111,7 +1111,7 @@ async def cb_admin_invite_pickgroup_cb(call: CallbackQuery):
 
 async def cb_admin_invite_pickgroup(call: CallbackQuery, page: int):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     limit = 8
     offset = page * limit
@@ -1125,30 +1125,30 @@ async def cb_admin_invite_pickgroup(call: CallbackQuery, page: int):
         )])
     nav = []
     if page > 0:
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:invite:pickgroup:page:{page-1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:invite:pickgroup:page:{page-1}"))
     if offset + limit < total:
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:invite:pickgroup:page:{page+1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:invite:pickgroup:page:{page+1}"))
     if nav:
         rows.append(nav)
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:root")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")])
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-    await call.message.edit_text("РЎРѕР·РґР°РЅРёРµ РїСЂРёРіР»Р°СЃРёС‚РµР»СЊРЅРѕР№ СЃСЃС‹Р»РєРё. Р’С‹Р±РµСЂРёС‚Рµ РіСЂСѓРїРїСѓ:", reply_markup=kb)
+    await call.message.edit_text("Создание пригласительной ссылки. Выберите группу:", reply_markup=kb)
     await call.answer()
 
 @router.callback_query(F.data.startswith("admin:invite:create:"))
 async def cb_admin_invite_create(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     gid = int(call.data.split(":")[-1])
     g = await db.get_group(gid)
     if not g:
-        await call.answer("Р“СЂСѓРїРїР° РЅРµ РЅР°Р№РґРµРЅР°.", show_alert=True)
+        await call.answer("Группа не найдена.", show_alert=True)
         return
     token = secrets.token_urlsafe(8)
     await db.create_invite(token, gid, tz_now(TZ_OFFSET_HOURS).isoformat())
     await call.message.edit_text(
-        f"РЎСЃС‹Р»РєР° РґР»СЏ РіСЂСѓРїРїС‹ <b>{g['title']}</b>:\n"
+        f"Ссылка для группы <b>{g['title']}</b>:\n"
         f"<code>https://t.me/{(await bot.me()).username}?start=g_{token}</code>",
         reply_markup=kb_back("admin:root"),
     )
@@ -1162,11 +1162,11 @@ async def cb_admin_slots(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
-    await call.message.edit_text("Р—Р°РЅСЏС‚РёСЏ (СЃР»РѕС‚С‹):", reply_markup=kb_admin_slots_root())
+    await call.message.edit_text("Занятия (слоты):", reply_markup=kb_admin_slots_root())
 
     await call.answer()
 
@@ -1175,17 +1175,17 @@ async def cb_admin_slots(call: CallbackQuery):
 @router.callback_query(F.data == "admin:tournaments")
 async def cb_admin_tournaments_root(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
-    await call.message.edit_text("РўСѓСЂРЅРёСЂС‹:", reply_markup=kb_admin_tournaments_root())
+    await call.message.edit_text("Турниры:", reply_markup=kb_admin_tournaments_root())
     await call.answer()
 
 @router.callback_query(F.data == "admin:tournament:create")
 async def cb_admin_tournament_create(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
-    await call.message.edit_text("Р’С‹Р±РµСЂРёС‚Рµ РіСЂСѓРїРїСѓ РґР»СЏ С‚СѓСЂРЅРёСЂР°:", reply_markup=kb_back("admin:tournaments"))
+    await call.message.edit_text("Выберите группу для турнира:", reply_markup=kb_back("admin:tournaments"))
     await cb_admin_tournament_pickgroup(call, page=0)
 
 @router.callback_query(F.data.startswith("admin:tournament:pickgroup:page:"))
@@ -1195,7 +1195,7 @@ async def cb_admin_tournament_pickgroup_cb(call: CallbackQuery):
 
 async def cb_admin_tournament_pickgroup(call: CallbackQuery, page: int):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     limit = 8
     offset = page * limit
@@ -1209,40 +1209,40 @@ async def cb_admin_tournament_pickgroup(call: CallbackQuery, page: int):
         )])
     nav = []
     if page > 0:
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:tournament:pickgroup:page:{page-1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:tournament:pickgroup:page:{page-1}"))
     if offset + limit < total:
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:tournament:pickgroup:page:{page+1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:tournament:pickgroup:page:{page+1}"))
     if nav:
         rows.append(nav)
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:tournaments")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:tournaments")])
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-    await call.message.edit_text("Р’С‹Р±РµСЂРёС‚Рµ РіСЂСѓРїРїСѓ РґР»СЏ С‚СѓСЂРЅРёСЂР°:", reply_markup=kb)
+    await call.message.edit_text("Выберите группу для турнира:", reply_markup=kb)
     await call.answer()
 
 @router.callback_query(F.data.startswith("admin:tournament:create:group:"))
 async def cb_admin_tournament_create_group(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     group_id = int(call.data.split(":")[-1])
     g = await db.get_group(group_id)
     if not g:
-        await call.answer("Р“СЂСѓРїРїР° РЅРµ РЅР°Р№РґРµРЅР°.", show_alert=True)
+        await call.answer("Группа не найдена.", show_alert=True)
         return
     draft = ADMIN_DRAFTS.setdefault(call.from_user.id, {"type": "tournament"})
     draft["group_id"] = group_id
     await db.set_mode(call.from_user.id, "admin_tournament_create:title")
     await call.message.edit_text(
-        f"РЎРѕР·РґР°РЅРёРµ С‚СѓСЂРЅРёСЂР° РґР»СЏ РіСЂСѓРїРїС‹ <b>{g['title']}</b>.\n"
-        "РЁР°Рі 1/5: РѕС‚РїСЂР°РІСЊС‚Рµ РЅР°Р·РІР°РЅРёРµ С‚СѓСЂРЅРёСЂР°.\n"
-        "/cancel вЂ” РѕС‚РјРµРЅР°."
+        f"Создание турнира для группы <b>{g['title']}</b>.\n"
+        "Шаг 1/5: отправьте название турнира.\n"
+        "/cancel — отмена."
     )
     await call.answer()
 
 @router.callback_query(F.data.startswith("admin:tournament:list:page:"))
 async def cb_admin_tournament_list(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     page = int(call.data.split(":")[-1])
     limit = 10
@@ -1250,54 +1250,54 @@ async def cb_admin_tournament_list(call: CallbackQuery):
     total = await db.count_tournaments()
     tournaments = await db.list_tournaments(offset, limit)
     if not tournaments:
-        await call.message.edit_text("РўСѓСЂРЅРёСЂРѕРІ РїРѕРєР° РЅРµС‚.", reply_markup=kb_back("admin:tournaments"))
+        await call.message.edit_text("Турниров пока нет.", reply_markup=kb_back("admin:tournaments"))
         await call.answer()
         return
     rows = []
     for t in tournaments:
         dt = parse_dt(t["starts_at"])
         rows.append([__import__("aiogram").types.InlineKeyboardButton(
-            text=f"{t['tournament_id']}. {t['title']} вЂ” {fmt_dt(dt)}",
+            text=f"{t['tournament_id']}. {t['title']} — {fmt_dt(dt)}",
             callback_data=f"admin:tournament:open:{t['tournament_id']}"
         )])
     nav = []
     if page > 0:
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:tournament:list:page:{page-1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:tournament:list:page:{page-1}"))
     if offset + limit < total:
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:tournament:list:page:{page+1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:tournament:list:page:{page+1}"))
     if nav:
         rows.append(nav)
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:tournaments")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:tournaments")])
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-    await call.message.edit_text("РўСѓСЂРЅРёСЂС‹:", reply_markup=kb)
+    await call.message.edit_text("Турниры:", reply_markup=kb)
     await call.answer()
 
 @router.callback_query(F.data.startswith("admin:tournament:open:"))
 async def cb_admin_tournament_open(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     tournament_id = int(call.data.split(":")[-1])
     t = await db.get_tournament(tournament_id)
     if not t:
-        await call.answer("РўСѓСЂРЅРёСЂ РЅРµ РЅР°Р№РґРµРЅ.", show_alert=True)
+        await call.answer("Турнир не найден.", show_alert=True)
         return
     starts = parse_dt(t["starts_at"])
     booked = await db.count_active_bookings("tournament", tournament_id)
     waitlist_count = await db.count_bookings("tournament", tournament_id, "waitlist")
     text = (
-        f"<b>РўСѓСЂРЅРёСЂ</b> #{tournament_id}\n"
-        f"РќР°Р·РІР°РЅРёРµ: {t['title']}\n"
-        f"рџ•’ {fmt_dt(starts)}\n"
-        f"рџ‘Ґ РњРµСЃС‚: {booked}/{t['capacity']}\n"
-        f"рџ“‹ Р›РёСЃС‚ РѕР¶РёРґР°РЅРёСЏ: {waitlist_count}/{t.get('waitlist_limit', 0)}\n"
+        f"<b>Турнир</b> #{tournament_id}\n"
+        f"Название: {t['title']}\n"
+        f"🕒 {fmt_dt(starts)}\n"
+        f"👥 Мест: {booked}/{t['capacity']}\n"
+        f"📋 Лист ожидания: {waitlist_count}/{t.get('waitlist_limit', 0)}\n"
     )
     if t.get("description"):
-        text += f"\nрџ“ќ {t['description']}"
+        text += f"\n📝 {t['description']}"
     rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="рџ‘Ґ Р—Р°РїРёСЃР°РЅРЅС‹Рµ", callback_data=f"admin:tournament:{tournament_id}:users:page:0")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="вљ™пёЏ РќР°СЃС‚СЂРѕР№РєРё", callback_data=f"admin:tournament:{tournament_id}:settings")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:tournament:list:page:0")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="👥 Записанные", callback_data=f"admin:tournament:{tournament_id}:users:page:0")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="⚙️ Настройки", callback_data=f"admin:tournament:{tournament_id}:settings")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:tournament:list:page:0")],
     ]
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
     await call.message.edit_text(text, reply_markup=kb)
@@ -1615,7 +1615,7 @@ async def cb_admin_slot_create(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1636,7 +1636,7 @@ async def cb_admin_slot_create_pickgroup(call: CallbackQuery, page: int):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1664,21 +1664,21 @@ async def cb_admin_slot_create_pickgroup(call: CallbackQuery, page: int):
 
     if page > 0:
 
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:slot:create:pickgroup:page:{page-1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:slot:create:pickgroup:page:{page-1}"))
 
     if offset + limit < total:
 
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:slot:create:pickgroup:page:{page+1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:slot:create:pickgroup:page:{page+1}"))
 
     if nav:
 
         rows.append(nav)
 
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:slots")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:slots")])
 
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
 
-    await call.message.edit_text("РЎРѕР·РґР°РЅРёРµ СЃР»РѕС‚Р°: РІС‹Р±РµСЂРёС‚Рµ РіСЂСѓРїРїСѓ.", reply_markup=kb)
+    await call.message.edit_text("Создание слота: выберите группу.", reply_markup=kb)
 
     await call.answer()
 
@@ -1689,7 +1689,7 @@ async def cb_admin_slot_create_group(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1699,7 +1699,7 @@ async def cb_admin_slot_create_group(call: CallbackQuery):
 
     if not g:
 
-        await call.answer("Р“СЂСѓРїРїР° РЅРµ РЅР°Р№РґРµРЅР°.", show_alert=True)
+        await call.answer("Группа не найдена.", show_alert=True)
 
         return
 
@@ -1708,19 +1708,19 @@ async def cb_admin_slot_create_group(call: CallbackQuery):
     draft["group_id"] = group_id
 
     rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="РџРЅ", callback_data="admin:slot:create:weekday:0")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="Р’С‚", callback_data="admin:slot:create:weekday:1")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="РЎСЂ", callback_data="admin:slot:create:weekday:2")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="Р§С‚", callback_data="admin:slot:create:weekday:3")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="РџС‚", callback_data="admin:slot:create:weekday:4")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="РЎР±", callback_data="admin:slot:create:weekday:5")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="Р’СЃ", callback_data="admin:slot:create:weekday:6")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:slot:create:pickgroup:page:0")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Пн", callback_data="admin:slot:create:weekday:0")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Вт", callback_data="admin:slot:create:weekday:1")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Ср", callback_data="admin:slot:create:weekday:2")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Чт", callback_data="admin:slot:create:weekday:3")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Пт", callback_data="admin:slot:create:weekday:4")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Сб", callback_data="admin:slot:create:weekday:5")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="Вс", callback_data="admin:slot:create:weekday:6")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:slot:create:pickgroup:page:0")],
     ]
 
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
 
-    await call.message.edit_text(f"РЎРѕР·РґР°РЅРёРµ СЃР»РѕС‚Р° РґР»СЏ РіСЂСѓРїРїС‹ <b>{g['title']}</b>.\nР’С‹Р±РµСЂРёС‚Рµ РґРµРЅСЊ РЅРµРґРµР»Рё:", reply_markup=kb)
+    await call.message.edit_text(f"Создание слота для группы <b>{g['title']}</b>.\nВыберите день недели:", reply_markup=kb)
 
     await call.answer()
 
@@ -1731,7 +1731,7 @@ async def cb_admin_slot_create_weekday(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1744,8 +1744,8 @@ async def cb_admin_slot_create_weekday(call: CallbackQuery):
     await db.set_mode(call.from_user.id, "admin_slot_create:time")
 
     await call.message.edit_text(
-        "РЁР°Рі 2/3: РѕС‚РїСЂР°РІСЊС‚Рµ РІСЂРµРјСЏ РІ С„РѕСЂРјР°С‚Рµ HH:MM (РЅР°РїСЂРёРјРµСЂ 19:00).\n"
-        "/cancel вЂ” РѕС‚РјРµРЅР°."
+        "Шаг 2/3: отправьте время в формате HH:MM (например 19:00).\n"
+        "/cancel — отмена."
     )
 
     await call.answer()
@@ -1758,7 +1758,7 @@ async def cb_admin_pickgroup(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1786,17 +1786,17 @@ async def cb_admin_pickgroup(call: CallbackQuery):
 
     nav=[]
 
-    if page>0: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:slot:pickgroup:page:{page-1}"))
+    if page>0: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:slot:pickgroup:page:{page-1}"))
 
-    if offset+limit<total: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:slot:pickgroup:page:{page+1}"))
+    if offset+limit<total: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:slot:pickgroup:page:{page+1}"))
 
     if nav: rows.append(nav)
 
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:slots")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:slots")])
 
     kb=__import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
 
-    await call.message.edit_text("Р’С‹Р±РµСЂРёС‚Рµ РіСЂСѓРїРїСѓ:", reply_markup=kb)
+    await call.message.edit_text("Выберите группу:", reply_markup=kb)
 
     await call.answer()
 
@@ -1808,7 +1808,7 @@ async def cb_admin_slot_list_for_group(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1824,7 +1824,7 @@ async def cb_admin_slot_list_for_group(call: CallbackQuery):
 
     if not slots:
 
-        await call.message.edit_text("РЈ СЌС‚РѕР№ РіСЂСѓРїРїС‹ РЅРµС‚ СЃР»РѕС‚РѕРІ.", reply_markup=kb_back("admin:slots"))
+        await call.message.edit_text("У этой группы нет слотов.", reply_markup=kb_back("admin:slots"))
 
         await call.answer()
 
@@ -1844,11 +1844,11 @@ async def cb_admin_slot_list_for_group(call: CallbackQuery):
 
         )])
 
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:slots")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:slots")])
 
     kb=__import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
 
-    await call.message.edit_text(f"РЎР»РѕС‚С‹ РіСЂСѓРїРїС‹ {gid}:", reply_markup=kb)
+    await call.message.edit_text(f"Слоты группы {gid}:", reply_markup=kb)
 
     await call.answer()
 
@@ -1860,7 +1860,7 @@ async def cb_admin_slot_open(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1870,7 +1870,7 @@ async def cb_admin_slot_open(call: CallbackQuery):
 
     if not slot:
 
-        await call.answer("РЎР»РѕС‚ РЅРµ РЅР°Р№РґРµРЅ.", show_alert=True)
+        await call.answer("Слот не найден.", show_alert=True)
 
         return
 
@@ -1880,15 +1880,15 @@ async def cb_admin_slot_open(call: CallbackQuery):
 
     text=(
 
-        f"<b>РЎР»РѕС‚</b> #{slot_id}\n"
+        f"<b>Слот</b> #{slot_id}\n"
 
-        f"Р“СЂСѓРїРїР°: {slot['group_id']}\n"
+        f"Группа: {slot['group_id']}\n"
 
-        f"рџ•’ {fmt_dt(starts)}\n"
+        f"🕒 {fmt_dt(starts)}\n"
 
-        f"рџ‘Ґ {booked}/{slot['capacity']}\n\n"
+        f"👥 {booked}/{slot['capacity']}\n\n"
 
-        f"РљРЅРѕРїРєРё РЅРёР¶Рµ: СЃРїРёСЃРѕРє Р·Р°РїРёСЃР°РЅРЅС‹С… (СЃ РѕРїР»Р°С‚РѕР№)."
+        f"Кнопки ниже: список записанных (с оплатой)."
 
     )
 
@@ -1896,9 +1896,9 @@ async def cb_admin_slot_open(call: CallbackQuery):
 
     rows=[
 
-        [__import__("aiogram").types.InlineKeyboardButton(text="рџ‘Ґ Р—Р°РїРёСЃР°РЅРЅС‹Рµ", callback_data=f"admin:training:{slot_id}:users:page:0")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="👥 Записанные", callback_data=f"admin:training:{slot_id}:users:page:0")],
 
-        [__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data=f"admin:slot:list:{slot['group_id']}")]
+        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin:slot:list:{slot['group_id']}")]
 
     ]
 
@@ -1916,7 +1916,7 @@ async def cb_admin_training_users(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1934,17 +1934,17 @@ async def cb_admin_training_users(call: CallbackQuery):
 
     items=await db.list_entity_bookings("training", slot_id, offset, limit)
 
-    lines=[f"<b>Р—Р°РїРёСЃР°РЅРЅС‹Рµ (СЃР»РѕС‚ #{slot_id})</b> ({total}):"]
+    lines=[f"<b>Записанные (слот #{slot_id})</b> ({total}):"]
 
     rows=[]
 
     for i, it in enumerate(items, start=offset+1):
 
-        st="вњ…" if it.get("pay_status")=="confirmed" else "вЏі"
+        st="✅" if it.get("pay_status")=="confirmed" else "⏳"
 
         uname=f"@{it['username']}" if it.get("username") else ""
 
-        lines.append(f"{i}) {it['full_name']} {uname} вЂ” {st}".strip())
+        lines.append(f"{i}) {it['full_name']} {uname} — {st}".strip())
 
         rows.append([__import__("aiogram").types.InlineKeyboardButton(
 
@@ -1956,13 +1956,13 @@ async def cb_admin_training_users(call: CallbackQuery):
 
     nav=[]
 
-    if page>0: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:training:{slot_id}:users:page:{page-1}"))
+    if page>0: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:training:{slot_id}:users:page:{page-1}"))
 
-    if offset+limit<total: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:training:{slot_id}:users:page:{page+1}"))
+    if offset+limit<total: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:training:{slot_id}:users:page:{page+1}"))
 
     if nav: rows.append(nav)
 
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data=f"admin:slot:open:{slot_id}")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin:slot:open:{slot_id}")])
 
     kb=__import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1978,7 +1978,7 @@ async def cb_admin_pay_toggle(call: CallbackQuery):
 
     if not is_admin(call.from_user.id):
 
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
 
         return
 
@@ -1988,7 +1988,7 @@ async def cb_admin_pay_toggle(call: CallbackQuery):
 
     new_status = await db.toggle_payment(int(booking_id), call.from_user.id)
 
-    await call.answer("РћРїР»Р°С‚Р°: " + ("вњ… РїРѕРґС‚РІРµСЂР¶РґРµРЅР°" if new_status=="confirmed" else "вЏі РѕР¶РёРґР°РµС‚"))
+    await call.answer("Оплата: " + ("✅ подтверждена" if new_status=="confirmed" else "⏳ ожидает"))
 
     # refresh list
 
@@ -2024,22 +2024,22 @@ async def cb_admin_pay_tournament_toggle(call: CallbackQuery):
 @router.callback_query(F.data == "admin:payset")
 async def cb_admin_payset(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     s = await db.get_payment_settings()
     amount = s.get("amount")
-    amount_text = f"РЎСѓРјРјР°: <b>{amount}</b>" if amount is not None else "РЎСѓРјРјР°: РЅРµ СѓРєР°Р·Р°РЅР°"
+    amount_text = f"Сумма: <b>{amount}</b>" if amount is not None else "Сумма: не указана"
     text = (
-        "<b>РћРїР»Р°С‚Р°: РЅР°СЃС‚СЂРѕР№РєРё</b>\n\n"
-        f"РўРµРєСѓС‰РёР№ С‚РµРєСЃС‚:\n{s.get('text','')}\n\n"
+        "<b>Оплата: настройки</b>\n\n"
+        f"Текущий текст:\n{s.get('text','')}\n\n"
         f"{amount_text}\n\n"
-        "РСЃРїРѕР»СЊР·СѓР№С‚Рµ РєРЅРѕРїРєРё РЅРёР¶Рµ РґР»СЏ РёР·РјРµРЅРµРЅРёР№."
+        "Используйте кнопки ниже для изменений.",
     )
     rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="вњЌпёЏ РР·РјРµРЅРёС‚СЊ С‚РµРєСЃС‚", callback_data="admin:payset:edit")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="рџ’° РЈРєР°Р·Р°С‚СЊ СЃСѓРјРјСѓ", callback_data="admin:payset:amount")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="рџ§№ РЎР±СЂРѕСЃРёС‚СЊ РѕРїР»Р°С‚Сѓ", callback_data="admin:payset:reset")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:root")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="✍️ Изменить текст", callback_data="admin:payset:edit")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="💰 Указать сумму", callback_data="admin:payset:amount")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="🧹 Сбросить оплату", callback_data="admin:payset:reset")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
     ]
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
     await call.message.edit_text(text, reply_markup=kb)
@@ -2048,12 +2048,12 @@ async def cb_admin_payset(call: CallbackQuery):
 @router.callback_query(F.data == "admin:payset:edit")
 async def cb_admin_payset_edit(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     await db.set_mode(call.from_user.id, "admin_payset:text")
     await call.message.edit_text(
-        "РћС‚РїСЂР°РІСЊС‚Рµ РЅРѕРІС‹Рј СЃРѕРѕР±С‰РµРЅРёРµРј С‚РµРєСЃС‚ РѕРїР»Р°С‚С‹.\n"
-        "\/cancel вЂ” РѕС‚РјРµРЅР°",
+        "Отправьте новым сообщением текст оплаты.\n"
+        "\/cancel — отмена",
         reply_markup=kb_back("admin:payset"),
     )
     await call.answer()
@@ -2061,12 +2061,12 @@ async def cb_admin_payset_edit(call: CallbackQuery):
 @router.callback_query(F.data == "admin:payset:amount")
 async def cb_admin_payset_amount(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     await db.set_mode(call.from_user.id, "admin_payset:amount")
     await call.message.edit_text(
-        "РћС‚РїСЂР°РІСЊС‚Рµ СЃСѓРјРјСѓ С‡РёСЃР»РѕРј (РЅР°РїСЂРёРјРµСЂ 3500).\n"
-        "\/cancel вЂ” РѕС‚РјРµРЅР°",
+        "Отправьте сумму числом (например 3500).\n"
+        "\/cancel — отмена",
         reply_markup=kb_back("admin:payset"),
     )
     await call.answer()
@@ -2074,15 +2074,15 @@ async def cb_admin_payset_amount(call: CallbackQuery):
 @router.callback_query(F.data == "admin:payset:reset")
 async def cb_admin_payset_reset(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="вњ… Р”Р°, СЃР±СЂРѕСЃРёС‚СЊ", callback_data="admin:payset:reset:confirm")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="вќЊ РћС‚РјРµРЅР°", callback_data="admin:payset")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="✅ Да, сбросить", callback_data="admin:payset:reset:confirm")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="❌ Отмена", callback_data="admin:payset")],
     ]
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
     await call.message.edit_text(
-        "Р’С‹ СѓРІРµСЂРµРЅС‹, С‡С‚Рѕ С…РѕС‚РёС‚Рµ СЃР±СЂРѕСЃРёС‚СЊ С‚РµРєСЃС‚ Рё СЃСѓРјРјСѓ РѕРїР»Р°С‚С‹?",
+        "Вы уверены, что хотите сбросить текст и сумму оплаты?",
         reply_markup=kb,
     )
     await call.answer()
@@ -2090,38 +2090,38 @@ async def cb_admin_payset_reset(call: CallbackQuery):
 @router.callback_query(F.data == "admin:payset:reset:confirm")
 async def cb_admin_payset_reset_confirm(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
-    await db.set_payment_settings("РћРїР»Р°С‚Р°: СѓС‚РѕС‡РЅРёС‚Рµ Сѓ С‚СЂРµРЅРµСЂР°.", None)
-    await call.message.edit_text("РЎР±СЂРѕС€РµРЅРѕ.\nРўРµРєСЃС‚ Рё СЃСѓРјРјР° РѕРїР»Р°С‚С‹ РѕС‡РёС‰РµРЅС‹.", reply_markup=kb_back("admin:payset"))
+    await db.set_payment_settings("Оплата: уточните у тренера.", None)
+    await call.message.edit_text("Сброшено.\nТекст и сумма оплаты очищены.", reply_markup=kb_back("admin:payset"))
     await call.answer()
 
 @router.callback_query(F.data == "admin:bc")
 async def cb_admin_bc(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="рџ‘Ґ Р’СЃРµРј", callback_data="admin:bc:all")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="рџЋЇ Р’С‹Р±СЂР°С‚СЊ РіСЂСѓРїРїСѓ", callback_data="admin:bc:pickgroup:page:0")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:root")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="👥 Всем", callback_data="admin:bc:all")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="🎯 Выбрать группу", callback_data="admin:bc:pickgroup:page:0")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
     ]
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-    await call.message.edit_text("Р Р°СЃСЃС‹Р»РєР°: РІС‹Р±РµСЂРёС‚Рµ РїРѕР»СѓС‡Р°С‚РµР»РµР№.", reply_markup=kb)
+    await call.message.edit_text("Рассылка: выберите получателей.", reply_markup=kb)
     await call.answer()
 
 @router.callback_query(F.data == "admin:bc:all")
 async def cb_admin_bc_all(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     draft = ADMIN_DRAFTS.setdefault(call.from_user.id, {"type": "bc"})
     draft["target_gid"] = None
     await db.set_mode(call.from_user.id, "admin_bc:compose")
     await call.message.edit_text(
-        "Р Р°СЃСЃС‹Р»РєР° РІСЃРµРј.\n"
-        "РћС‚РїСЂР°РІСЊС‚Рµ СЃРѕРѕР±С‰РµРЅРёРµ СЃ С‚РµРєСЃС‚РѕРј.\n"
-        "\/cancel вЂ” РѕС‚РјРµРЅР°",
+        "Рассылка всем.\n"
+        "Отправьте сообщение с текстом.\n"
+        "\/cancel — отмена",
         reply_markup=kb_back("admin:bc"),
     )
     await call.answer()
@@ -2133,14 +2133,14 @@ async def cb_admin_bc_pickgroup_page(call: CallbackQuery):
 
 async def cb_admin_bc_pickgroup(call: CallbackQuery, page: int):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     limit = 8
     offset = page * limit
     total = await db.count_groups()
     if total == 0:
         await call.message.edit_text(
-            "Р“СЂСѓРїРї РїРѕРєР° РЅРµС‚. РЎРЅР°С‡Р°Р»Р° СЃРѕР·РґР°Р№С‚Рµ РіСЂСѓРїРїСѓ.",
+            "Групп пока нет. Сначала создайте группу.",
             reply_markup=kb_back("admin:root"),
         )
         await call.answer()
@@ -2154,33 +2154,33 @@ async def cb_admin_bc_pickgroup(call: CallbackQuery, page: int):
         )])
     nav = []
     if page > 0:
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ", callback_data=f"admin:bc:pickgroup:page:{page-1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"admin:bc:pickgroup:page:{page-1}"))
     if offset + limit < total:
-        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="вћЎпёЏ", callback_data=f"admin:bc:pickgroup:page:{page+1}"))
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:bc:pickgroup:page:{page+1}"))
     if nav:
         rows.append(nav)
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="admin:bc")])
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:bc")])
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-    await call.message.edit_text("Р’С‹Р±РµСЂРёС‚Рµ РіСЂСѓРїРїСѓ РґР»СЏ СЂР°СЃСЃС‹Р»РєРё:", reply_markup=kb)
+    await call.message.edit_text("Выберите группу для рассылки:", reply_markup=kb)
     await call.answer()
 
 @router.callback_query(F.data.startswith("admin:bc:group:"))
 async def cb_admin_bc_group(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("РќРµС‚ РґРѕСЃС‚СѓРїР°.", show_alert=True)
+        await call.answer("Нет доступа.", show_alert=True)
         return
     group_id = int(call.data.split(":")[-1])
     g = await db.get_group(group_id)
     if not g:
-        await call.answer("Р“СЂСѓРїРїР° РЅРµ РЅР°Р№РґРµРЅР°.", show_alert=True)
+        await call.answer("Группа не найдена.", show_alert=True)
         return
     draft = ADMIN_DRAFTS.setdefault(call.from_user.id, {"type": "bc"})
     draft["target_gid"] = group_id
     await db.set_mode(call.from_user.id, "admin_bc:compose")
     await call.message.edit_text(
-        f"Р Р°СЃСЃС‹Р»РєР° РІ РіСЂСѓРїРїСѓ <b>{g['title']}</b>.\n"
-        "РћС‚РїСЂР°РІСЊС‚Рµ СЃРѕРѕР±С‰РµРЅРёРµ СЃ С‚РµРєСЃС‚РѕРј.\n"
-        "\/cancel вЂ” РѕС‚РјРµРЅР°",
+        f"Рассылка в группу <b>{g['title']}</b>.\n"
+        "Отправьте сообщение с текстом.\n"
+        "\/cancel — отмена",
         reply_markup=kb_back("admin:bc"),
     )
     await call.answer()
@@ -2203,7 +2203,7 @@ async def message_router(message: Message):
 
         ADMIN_DRAFTS.pop(message.from_user.id, None)
 
-        await message.answer("РћС‚РјРµРЅРµРЅРѕ.", reply_markup=kb_main(is_admin(message.from_user.id)))
+        await message.answer("Отменено.", reply_markup=kb_main(is_admin(message.from_user.id)))
 
         return
 
@@ -2217,7 +2217,7 @@ async def message_router(message: Message):
 
         if not title:
 
-            await message.answer("РџСѓСЃС‚Рѕ. Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ РіСЂСѓРїРїС‹.")
+            await message.answer("Пусто. Введите название группы.")
 
             return
 
@@ -2225,7 +2225,7 @@ async def message_router(message: Message):
 
         await db.set_mode(message.from_user.id, None)
 
-        await message.answer(f"Р“СЂСѓРїРїР° СЃРѕР·РґР°РЅР°. ID: <b>{gid}</b>", reply_markup=kb_admin_root())
+        await message.answer(f"Группа создана. ID: <b>{gid}</b>", reply_markup=kb_admin_root())
 
         return
 
@@ -2239,7 +2239,7 @@ async def message_router(message: Message):
 
         if not message.photo:
 
-            await message.answer("РќСѓР¶РЅР° РєР°СЂС‚РёРЅРєР° (С„РѕС‚Рѕ). РћС‚РїСЂР°РІСЊС‚Рµ С„РѕС‚Рѕ.")
+            await message.answer("Нужна картинка (фото). Отправьте фото.")
 
             return
 
@@ -2249,7 +2249,7 @@ async def message_router(message: Message):
 
         await db.set_mode(message.from_user.id, None)
 
-        await message.answer("Р Р°СЃРїРёСЃР°РЅРёРµ РѕР±РЅРѕРІР»РµРЅРѕ.", reply_markup=kb_admin_root())
+        await message.answer("Расписание обновлено.", reply_markup=kb_admin_root())
 
         return
 
@@ -2317,7 +2317,7 @@ async def message_router(message: Message):
 
             if ":" not in raw:
 
-                await message.answer("РќРµРІРµСЂРЅС‹Р№ С„РѕСЂРјР°С‚ РІСЂРµРјРµРЅРё. РџСЂРёРјРµСЂ: 19:00")
+                await message.answer("Неверный формат времени. Пример: 19:00")
 
                 return
 
@@ -2335,7 +2335,7 @@ async def message_router(message: Message):
 
             except Exception:
 
-                await message.answer("РќРµРІРµСЂРЅС‹Р№ С„РѕСЂРјР°С‚ РІСЂРµРјРµРЅРё. РџСЂРёРјРµСЂ: 19:00")
+                await message.answer("Неверный формат времени. Пример: 19:00")
 
                 return
 
@@ -2343,7 +2343,7 @@ async def message_router(message: Message):
 
             if weekday is None:
 
-                await message.answer("РќРµ РІС‹Р±СЂР°РЅ РґРµРЅСЊ РЅРµРґРµР»Рё. РќР°С‡РЅРёС‚Рµ Р·Р°РЅРѕРІРѕ.")
+                await message.answer("Не выбран день недели. Начните заново.")
 
                 return
 
@@ -2353,7 +2353,7 @@ async def message_router(message: Message):
 
             await db.set_mode(message.from_user.id, "admin_slot_create:capacity")
 
-            await message.answer("РЁР°Рі 3/3: РѕС‚РїСЂР°РІСЊС‚Рµ Р»РёРјРёС‚ РјРµСЃС‚ (С‡РёСЃР»Рѕ). РњРѕР¶РЅРѕ СЃ РїСЂРёРјРµС‡Р°РЅРёРµРј: 6;РўСЂРµРЅРёСЂРѕРІРєР° РІ Р·Р°Р»Рµ")
+            await message.answer("Шаг 3/3: отправьте лимит мест (число). Можно с примечанием: 6;Тренировка в зале")
 
             return
 
@@ -2373,7 +2373,7 @@ async def message_router(message: Message):
 
             if not raw.isdigit():
 
-                await message.answer("РќСѓР¶РЅРѕ С‡РёСЃР»Рѕ. РџСЂРёРјРµСЂ: 6 РёР»Рё 6;РџСЂРёРјРµС‡Р°РЅРёРµ")
+                await message.answer("Нужно число. Пример: 6 или 6;Примечание")
 
                 return
 
@@ -2385,7 +2385,7 @@ async def message_router(message: Message):
 
             await db.set_mode(message.from_user.id, None)
 
-            await message.answer(f"РЎР»РѕС‚ СЃРѕР·РґР°РЅ: #{slot_id}", reply_markup=kb_admin_root())
+            await message.answer(f"Слот создан: #{slot_id}", reply_markup=kb_admin_root())
 
             return
 
@@ -2401,11 +2401,11 @@ async def message_router(message: Message):
         if step == "title":
             title = (message.text or "").strip()
             if not title:
-                await message.answer("РџСѓСЃС‚Рѕ. Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ С‚СѓСЂРЅРёСЂР°.")
+                await message.answer("Пусто. Введите название турнира.")
                 return
             draft["title"] = title
             await db.set_mode(message.from_user.id, "admin_tournament_create:starts_at")
-            await message.answer("РЁР°Рі 2/5: РѕС‚РїСЂР°РІСЊС‚Рµ РґР°С‚Сѓ/РІСЂРµРјСЏ РІ С„РѕСЂРјР°С‚Рµ YYYY-MM-DD HH:MM (РЅР°РїСЂРёРјРµСЂ 2026-01-30 19:00)")
+            await message.answer("Шаг 2/5: отправьте дату/время в формате YYYY-MM-DD HH:MM (например 2026-01-30 19:00)")
             return
 
         if step == "starts_at":
@@ -2415,31 +2415,31 @@ async def message_router(message: Message):
                 dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
                 dt = dt.replace(tzinfo=tz_now(TZ_OFFSET_HOURS).tzinfo)
             except Exception:
-                await message.answer("РќРµРІРµСЂРЅС‹Р№ С„РѕСЂРјР°С‚. РџСЂРёРјРµСЂ: 2026-01-30 19:00")
+                await message.answer("Неверный формат. Пример: 2026-01-30 19:00")
                 return
             draft["starts_at"] = dt.isoformat()
             await db.set_mode(message.from_user.id, "admin_tournament_create:capacity")
-            await message.answer("РЁР°Рі 3/5: РѕС‚РїСЂР°РІСЊС‚Рµ Р»РёРјРёС‚ РјРµСЃС‚ (С‡РёСЃР»Рѕ).")
+            await message.answer("Шаг 3/5: отправьте лимит мест (число).")
             return
 
         if step == "capacity":
             raw = (message.text or "").strip()
             if not raw.isdigit():
-                await message.answer("РќСѓР¶РЅРѕ С‡РёСЃР»Рѕ. РџСЂРёРјРµСЂ: 16")
+                await message.answer("Нужно число. Пример: 16")
                 return
             draft["capacity"] = int(raw)
             await db.set_mode(message.from_user.id, "admin_tournament_create:waitlist")
-            await message.answer("РЁР°Рі 4/5: Р»РёРјРёС‚ Р»РёСЃС‚Р° РѕР¶РёРґР°РЅРёСЏ (С‡РёСЃР»Рѕ, 0 = Р±РµР· Р»РёСЃС‚Р° РѕР¶РёРґР°РЅРёСЏ).")
+            await message.answer("Шаг 4/5: лимит листа ожидания (число, 0 = без листа ожидания).")
             return
 
         if step == "waitlist":
             raw = (message.text or "").strip()
             if not raw.isdigit():
-                await message.answer("РќСѓР¶РЅРѕ С‡РёСЃР»Рѕ. РџСЂРёРјРµСЂ: 10 РёР»Рё 0")
+                await message.answer("Нужно число. Пример: 10 или 0")
                 return
             draft["waitlist_limit"] = int(raw)
             await db.set_mode(message.from_user.id, "admin_tournament_create:description")
-            await message.answer("РЁР°Рі 5/5: РѕРїРёСЃР°РЅРёРµ (РёР»Рё РѕС‚РїСЂР°РІСЊС‚Рµ '-' С‡С‚РѕР±С‹ РїСЂРѕРїСѓСЃС‚РёС‚СЊ).")
+            await message.answer("Шаг 5/5: описание (или отправьте '-' чтобы пропустить).")
             return
 
         if step == "description":
@@ -2449,7 +2449,7 @@ async def message_router(message: Message):
 
             group_id = draft.get("group_id")
             if not group_id:
-                await message.answer("РќРµ РІС‹Р±СЂР°РЅР° РіСЂСѓРїРїР°.")
+                await message.answer("Не выбрана группа.")
                 await db.set_mode(message.from_user.id, None)
                 ADMIN_DRAFTS.pop(message.from_user.id, None)
                 return
@@ -2476,8 +2476,8 @@ async def message_router(message: Message):
             await db.set_mode(message.from_user.id, None)
 
             await message.answer(
-                f"РўСѓСЂРЅРёСЂ СЃРѕР·РґР°РЅ: #{tournament_id}\n"
-                "Р—Р°РїРёСЃСЊ РѕС‚РєСЂС‹С‚Р° СЃСЂР°Р·Сѓ. Р—Р°РєСЂС‹С‚РёРµ вЂ” РїРѕ РЅР°СЃС‚СЂРѕР№РєР°Рј РіСЂСѓРїРїС‹.",
+                f"Турнир создан: #{tournament_id}\n"
+                "Запись открыта сразу. Закрытие — по настройкам группы.",
                 reply_markup=kb_admin_root(),
             )
             return
@@ -2561,7 +2561,7 @@ async def message_router(message: Message):
 
         if not txt:
 
-            await message.answer("РџСѓСЃС‚РѕР№ С‚РµРєСЃС‚.")
+            await message.answer("Пустой текст.")
 
             return
 
@@ -2579,7 +2579,7 @@ async def message_router(message: Message):
 
                 except Exception:
 
-                    await message.answer("amount РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С‡РёСЃР»РѕРј.")
+                    await message.answer("amount должен быть числом.")
 
                     return
 
@@ -2587,7 +2587,7 @@ async def message_router(message: Message):
 
                 lines.append(line)
 
-        final="\n".join(lines).strip() or "РћРїР»Р°С‚Р°: СѓС‚РѕС‡РЅРёС‚Рµ Сѓ С‚СЂРµРЅРµСЂР°."
+        final="\n".join(lines).strip() or "Оплата: уточните у тренера."
 
         await db.set_payment_settings(final, amount)
 
@@ -2602,7 +2602,7 @@ async def message_router(message: Message):
     if mode == "admin_payset:amount":
         raw = (message.text or "").strip()
         if not raw.isdigit():
-            await message.answer("РЎСѓРјРјР° РґРѕР»Р¶РЅР° Р±С‹С‚СЊ С‡РёСЃР»РѕРј.")
+            await message.answer("Сумма должна быть числом.")
             return
         amount = int(raw)
         s = await db.get_payment_settings()
@@ -2617,7 +2617,7 @@ async def message_router(message: Message):
     if mode == "admin_bc:compose":
         txt = (message.text or "").strip()
         if not txt:
-            await message.answer("РџСѓСЃС‚РѕР№ С‚РµРєСЃС‚.")
+            await message.answer("Пустой текст.")
             return
 
         draft = ADMIN_DRAFTS.get(message.from_user.id, {})
@@ -2650,7 +2650,7 @@ async def message_router(message: Message):
 
         await db.set_mode(message.from_user.id, None)
         ADMIN_DRAFTS.pop(message.from_user.id, None)
-        await message.answer(f"Р Р°СЃСЃС‹Р»РєР° РѕС‚РїСЂР°РІР»РµРЅР°: {sent}", reply_markup=kb_admin_root())
+        await message.answer(f"Рассылка отправлена: {sent}", reply_markup=kb_admin_root())
         return
 
 
