@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
   title TEXT NOT NULL,
   starts_at TEXT NOT NULL,
   capacity INTEGER NOT NULL,
+  amount INTEGER,
   description TEXT,
   close_mode TEXT NOT NULL DEFAULT 'at_start', -- at_start | minutes_before
   close_minutes_before INTEGER,
@@ -143,6 +144,8 @@ class DB:
         rows = await cur.fetchall()
         existing = {r["name"] for r in rows}
         migrations = []
+        if "amount" not in existing:
+            migrations.append("ALTER TABLE tournaments ADD COLUMN amount INTEGER")
         if "close_mode" not in existing:
             migrations.append("ALTER TABLE tournaments ADD COLUMN close_mode TEXT NOT NULL DEFAULT 'at_start'")
         if "close_minutes_before" not in existing:
@@ -312,6 +315,7 @@ class DB:
         title: str,
         starts_at: str,
         capacity: int,
+        amount: Optional[int],
         description: Optional[str],
         close_mode: str = "at_start",
         close_minutes_before: Optional[int] = None,
@@ -321,13 +325,14 @@ class DB:
         async with self.connect() as db:
             cur = await db.execute(
                 """INSERT INTO tournaments(
-                    title, starts_at, capacity, description,
+                    title, starts_at, capacity, amount, description,
                     close_mode, close_minutes_before, cancel_minutes_before, waitlist_limit
-                ) VALUES(?,?,?,?,?,?,?,?)""",
+                ) VALUES(?,?,?,?,?,?,?,?,?)""",
                 (
                     title,
                     starts_at,
                     capacity,
+                    amount,
                     description,
                     close_mode,
                     close_minutes_before,
