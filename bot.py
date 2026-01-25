@@ -2024,77 +2024,89 @@ async def cb_admin_pay_tournament_toggle(call: CallbackQuery):
 @router.callback_query(F.data == "admin:payset")
 async def cb_admin_payset(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
+        await call.answer("\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430.", show_alert=True)
         return
     s = await db.get_payment_settings()
     amount = s.get("amount")
-    amount_text = f"Сумма: <b>{amount}</b>" if amount is not None else "Сумма: не указана"
+    amount_text = (
+        f"\u0421\u0443\u043c\u043c\u0430: <b>{amount}</b>"
+        if amount is not None
+        else "\u0421\u0443\u043c\u043c\u0430: \u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430"
+    )
     text = (
-        "<b>Оплата: настройки</b>\n\n"
-        f"Текущий текст:\n{s.get('text','')}\n\n"
+        "<b>\u041e\u043f\u043b\u0430\u0442\u0430: \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438</b>\n\n"
+        f"\u0422\u0435\u043a\u0443\u0449\u0438\u0439 \u0442\u0435\u043a\u0441\u0442:\n{s.get('text','')}\n\n"
         f"{amount_text}\n\n"
-        "Используйте кнопки ниже для изменений.",
+        "\u0418\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0439\u0442\u0435 \u043a\u043d\u043e\u043f\u043a\u0438 \u043d\u0438\u0436\u0435 \u0434\u043b\u044f \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0439."
     )
     rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="✍️ Изменить текст", callback_data="admin:payset:edit")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="💰 Указать сумму", callback_data="admin:payset:amount")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="🧹 Сбросить оплату", callback_data="admin:payset:reset")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="\u270d\ufe0f \u0418\u0437\u043c\u0435\u043d\u0438\u0442\u044c \u0442\u0435\u043a\u0441\u0442", callback_data="admin:payset:edit")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="\U0001F4B0 \u0423\u043a\u0430\u0437\u0430\u0442\u044c \u0441\u0443\u043c\u043c\u0443", callback_data="admin:payset:amount")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="\U0001F9F9 \u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u043e\u043f\u043b\u0430\u0442\u0443", callback_data="admin:payset:reset")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="\u2b05\ufe0f \u041d\u0430\u0437\u0430\u0434", callback_data="admin:root")],
     ]
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
     await call.message.edit_text(text, reply_markup=kb)
     await call.answer()
 
+
 @router.callback_query(F.data == "admin:payset:edit")
 async def cb_admin_payset_edit(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
+        await call.answer("\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430.", show_alert=True)
         return
     await db.set_mode(call.from_user.id, "admin_payset:text")
     await call.message.edit_text(
-        "Отправьте новым сообщением текст оплаты.\n"
-        "\/cancel — отмена",
+        "\u041e\u0442\u043f\u0440\u0430\u0432\u044c\u0442\u0435 \u043d\u043e\u0432\u044b\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c \u0442\u0435\u043a\u0441\u0442 \u043e\u043f\u043b\u0430\u0442\u044b.\n"
+        "/cancel \u2014 \u043e\u0442\u043c\u0435\u043d\u0430",
         reply_markup=kb_back("admin:payset"),
     )
     await call.answer()
+
 
 @router.callback_query(F.data == "admin:payset:amount")
 async def cb_admin_payset_amount(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
+        await call.answer("\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430.", show_alert=True)
         return
     await db.set_mode(call.from_user.id, "admin_payset:amount")
     await call.message.edit_text(
-        "Отправьте сумму числом (например 3500).\n"
-        "\/cancel — отмена",
+        "\u041e\u0442\u043f\u0440\u0430\u0432\u044c\u0442\u0435 \u0441\u0443\u043c\u043c\u0443 \u0447\u0438\u0441\u043b\u043e\u043c (\u043d\u0430\u043f\u0440\u0438\u043c\u0435\u0440 3500).\n"
+        "/cancel \u2014 \u043e\u0442\u043c\u0435\u043d\u0430",
         reply_markup=kb_back("admin:payset"),
     )
     await call.answer()
 
+
 @router.callback_query(F.data == "admin:payset:reset")
 async def cb_admin_payset_reset(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
+        await call.answer("\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430.", show_alert=True)
         return
     rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="✅ Да, сбросить", callback_data="admin:payset:reset:confirm")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="❌ Отмена", callback_data="admin:payset")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="\u2705 \u0414\u0430, \u0441\u0431\u0440\u043e\u0441\u0438\u0442\u044c", callback_data="admin:payset:reset:confirm")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="\u274c \u041e\u0442\u043c\u0435\u043d\u0430", callback_data="admin:payset")],
     ]
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
     await call.message.edit_text(
-        "Вы уверены, что хотите сбросить текст и сумму оплаты?",
+        "\u0412\u044b \u0443\u0432\u0435\u0440\u0435\u043d\u044b, \u0447\u0442\u043e \u0445\u043e\u0442\u0438\u0442\u0435 \u0441\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0442\u0435\u043a\u0441\u0442 \u0438 \u0441\u0443\u043c\u043c\u0443 \u043e\u043f\u043b\u0430\u0442\u044b?",
         reply_markup=kb,
     )
     await call.answer()
 
+
 @router.callback_query(F.data == "admin:payset:reset:confirm")
 async def cb_admin_payset_reset_confirm(call: CallbackQuery):
     if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
+        await call.answer("\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430.", show_alert=True)
         return
-    await db.set_payment_settings("Оплата: уточните у тренера.", None)
-    await call.message.edit_text("Сброшено.\nТекст и сумма оплаты очищены.", reply_markup=kb_back("admin:payset"))
+    await db.set_payment_settings("\u041e\u043f\u043b\u0430\u0442\u0430: \u0443\u0442\u043e\u0447\u043d\u0438\u0442\u0435 \u0443 \u0442\u0440\u0435\u043d\u0435\u0440\u0430.", None)
+    await call.message.edit_text(
+        "\u0421\u0431\u0440\u043e\u0448\u0435\u043d\u043e.\n\u0422\u0435\u043a\u0441\u0442 \u0438 \u0441\u0443\u043c\u043c\u0430 \u043e\u043f\u043b\u0430\u0442\u044b \u043e\u0447\u0438\u0449\u0435\u043d\u044b.",
+        reply_markup=kb_back("admin:payset"),
+    )
     await call.answer()
+
 
 @router.callback_query(F.data == "admin:bc")
 async def cb_admin_bc(call: CallbackQuery):
