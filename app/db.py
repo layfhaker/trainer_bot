@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT,
   full_name TEXT,
   group_id INTEGER,
+  notify_open INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   entity_type TEXT NOT NULL, -- training | tournament
   entity_id INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'active', -- active | waitlist | cancelled
+  seats INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 );
 
@@ -97,6 +99,19 @@ CREATE TABLE IF NOT EXISTS payment_settings (
 CREATE TABLE IF NOT EXISTS user_modes (
   user_id INTEGER PRIMARY KEY,
   mode TEXT
+);
+
+CREATE TABLE IF NOT EXISTS notify_settings (
+  id INTEGER PRIMARY KEY CHECK(id=1),
+  text TEXT NOT NULL DEFAULT 'Открыта запись на тренировку.',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notify_open_log (
+  user_id INTEGER NOT NULL,
+  slot_id INTEGER NOT NULL,
+  sent_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, slot_id)
 );
 
 CREATE TABLE IF NOT EXISTS admins (
@@ -136,6 +151,14 @@ class DB:
                     "INSERT INTO payment_settings(id, text, amount, updated_at) VALUES (1, ?, ?, ?)",
                     ("Оплата: уточните у тренера.", None, datetime.utcnow().isoformat())
                 )
+            # seed notify_settings row
+            cur = await db.execute("SELECT id FROM notify_settings WHERE id=1")
+            row = await cur.fetchone()
+            if row is None:
+                await db.execute(
+                    "INSERT INTO notify_settings(id, text, updated_at) VALUES (1, ?, ?)",
+                    ("Открыта запись на тренировку.", datetime.utcnow().isoformat())
+                )
             await db.commit()
 
     async def _migrate(self, db: aiosqlite.Connection) -> None:
@@ -154,8 +177,21 @@ class DB:
             migrations.append("ALTER TABLE tournaments ADD COLUMN cancel_minutes_before INTEGER NOT NULL DEFAULT 360")
         if "waitlist_limit" not in existing:
             migrations.append("ALTER TABLE tournaments ADD COLUMN waitlist_limit INTEGER NOT NULL DEFAULT 0")
+        # add seats to bookings if missing
+        cur = await db.execute("PRAGMA table_info(bookings)")
+        rows = await cur.fetchall()
+        existing_bookings = {r["name"] for r in rows}
+        if "seats" not in existing_bookings:
+            migrations.append("ALTER TABLE bookings ADD COLUMN seats INTEGER NOT NULL DEFAULT 1")
         for stmt in migrations:
             await db.execute(stmt)
+
+        # add notify_open to users if missing
+        cur = await db.execute("PRAGMA table_info(users)")
+        rows = await cur.fetchall()
+        existing_users = {r["name"] for r in rows}
+        if "notify_open" not in existing_users:
+            await db.execute("ALTER TABLE users ADD COLUMN notify_open INTEGER NOT NULL DEFAULT 0")
 
     # ---------- user ----------
     async def upsert_user(self, user_id: int, username: str, full_name: str) -> None:
@@ -168,6 +204,19 @@ class DB:
             )
             await db.commit()
 
+    async def create_guest_user(self, full_name: str, group_id: Optional[int]) -> int:
+        async with self.connect() as db:
+            cur = await db.execute("SELECT MIN(user_id) AS m FROM users")
+            row = await cur.fetchone()
+            min_id = row["m"] if row else None
+            new_id = -1 if min_id is None or int(min_id) >= 0 else int(min_id) - 1
+            await db.execute(
+                "INSERT INTO users(user_id, username, full_name, group_id, notify_open, created_at) VALUES(?,?,?,?,?,?)",
+                (new_id, "", full_name, group_id, 0, datetime.utcnow().isoformat()),
+            )
+            await db.commit()
+            return int(new_id)
+
     async def set_user_group(self, user_id: int, group_id: int) -> None:
         async with self.connect() as db:
             await db.execute("UPDATE users SET group_id=? WHERE user_id=?", (group_id, user_id))
@@ -178,6 +227,11 @@ class DB:
             cur = await db.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def set_user_notify_open(self, user_id: int, enabled: bool) -> None:
+        async with self.connect() as db:
+            await db.execute("UPDATE users SET notify_open=? WHERE user_id=?", (1 if enabled else 0, user_id))
+            await db.commit()
 
     # ---------- mode ----------
     async def set_mode(self, user_id: int, mode: Optional[str]) -> None:
@@ -231,6 +285,11 @@ class DB:
             await db.execute("UPDATE groups SET schedule_file_id=? WHERE group_id=?", (file_id, group_id))
             await db.commit()
 
+    async def update_group_title(self, group_id: int, title: str) -> None:
+        async with self.connect() as db:
+            await db.execute("UPDATE groups SET title=? WHERE group_id=?", (title, group_id))
+            await db.commit()
+
     async def get_group_settings(self, group_id: int) -> Optional[dict]:
         async with self.connect() as db:
             cur = await db.execute("SELECT * FROM group_settings WHERE group_id=?", (group_id,))
@@ -258,6 +317,14 @@ class DB:
                 (group_id, limit, offset)
             )
             return [dict(r) for r in rows]
+
+    async def list_users_with_notify(self, group_id: int) -> List[int]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT user_id FROM users WHERE group_id=? AND notify_open=1",
+                (group_id,),
+            )
+            return [int(r["user_id"]) for r in rows]
 
     async def count_group_users(self, group_id: int) -> int:
         async with self.connect() as db:
@@ -300,6 +367,16 @@ class DB:
                 WHERE group_id=? AND is_active=1 AND starts_at BETWEEN ? AND ?
                 ORDER BY starts_at LIMIT ?""",
                 (group_id, from_iso, to_iso, limit)
+            )
+            return [dict(r) for r in rows]
+
+    async def list_active_slots(self, from_iso: str, to_iso: str, limit: int = 200) -> List[dict]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                """SELECT * FROM training_slots
+                WHERE is_active=1 AND starts_at BETWEEN ? AND ?
+                ORDER BY starts_at LIMIT ?""",
+                (from_iso, to_iso, limit),
             )
             return [dict(r) for r in rows]
 
@@ -487,11 +564,19 @@ class DB:
     async def count_active_bookings(self, entity_type: str, entity_id: int) -> int:
         async with self.connect() as db:
             cur = await db.execute(
-                "SELECT COUNT(*) AS c FROM bookings WHERE entity_type=? AND entity_id=? AND status='active'",
+                "SELECT COALESCE(SUM(seats),0) AS c FROM bookings WHERE entity_type=? AND entity_id=? AND status='active'",
                 (entity_type, entity_id)
             )
             row = await cur.fetchone()
             return int(row["c"])
+
+    async def list_active_booking_user_ids(self, entity_type: str, entity_id: int) -> List[int]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT user_id FROM bookings WHERE entity_type=? AND entity_id=? AND status='active'",
+                (entity_type, entity_id),
+            )
+            return [int(r["user_id"]) for r in rows]
 
     async def count_bookings(self, entity_type: str, entity_id: int, status: str) -> int:
         async with self.connect() as db:
@@ -520,11 +605,11 @@ class DB:
             row = await cur.fetchone()
             return dict(row) if row else None
 
-    async def create_booking(self, user_id: int, entity_type: str, entity_id: int, status: str = "active") -> int:
+    async def create_booking(self, user_id: int, entity_type: str, entity_id: int, status: str = "active", seats: int = 1) -> int:
         async with self.connect() as db:
             cur = await db.execute(
-                "INSERT INTO bookings(user_id, entity_type, entity_id, status, created_at) VALUES(?,?,?,?,?)",
-                (user_id, entity_type, entity_id, status, datetime.utcnow().isoformat())
+                "INSERT INTO bookings(user_id, entity_type, entity_id, status, seats, created_at) VALUES(?,?,?,?,?,?)",
+                (user_id, entity_type, entity_id, status, int(seats), datetime.utcnow().isoformat())
             )
             booking_id = int(cur.lastrowid)
             await db.execute(
@@ -533,6 +618,11 @@ class DB:
             )
             await db.commit()
             return booking_id
+
+    async def update_booking_seats(self, booking_id: int, seats: int) -> None:
+        async with self.connect() as db:
+            await db.execute("UPDATE bookings SET seats=? WHERE booking_id=?", (int(seats), booking_id))
+            await db.commit()
 
     async def cancel_booking(self, booking_id: int) -> None:
         async with self.connect() as db:
@@ -547,7 +637,7 @@ class DB:
     async def list_entity_bookings(self, entity_type: str, entity_id: int, offset: int, limit: int, status: str = "active") -> List[dict]:
         async with self.connect() as db:
             rows = await db.execute_fetchall(
-                """SELECT b.booking_id, b.user_id, u.full_name, u.username, p.status AS pay_status
+                """SELECT b.booking_id, b.user_id, b.seats, u.full_name, u.username, p.status AS pay_status
                 FROM bookings b
                 JOIN users u ON u.user_id=b.user_id
                 LEFT JOIN payments p ON p.booking_id=b.booking_id
@@ -575,6 +665,23 @@ class DB:
             )
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    # ---------- notifications ----------
+    async def list_notified_user_ids(self, slot_id: int) -> List[int]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT user_id FROM notify_open_log WHERE slot_id=?",
+                (slot_id,),
+            )
+            return [int(r["user_id"]) for r in rows]
+
+    async def mark_open_notified(self, user_id: int, slot_id: int) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO notify_open_log(user_id, slot_id, sent_at) VALUES(?,?,?)",
+                (user_id, slot_id, datetime.utcnow().isoformat()),
+            )
+            await db.commit()
 
     async def toggle_payment(self, booking_id: int, admin_id: int) -> str:
         async with self.connect() as db:
@@ -605,5 +712,20 @@ class DB:
             await db.execute(
                 "UPDATE payment_settings SET text=?, amount=?, updated_at=? WHERE id=1",
                 (text, amount, datetime.utcnow().isoformat())
+            )
+            await db.commit()
+
+    # ---------- notify settings ----------
+    async def get_notify_settings(self) -> dict:
+        async with self.connect() as db:
+            cur = await db.execute("SELECT * FROM notify_settings WHERE id=1")
+            row = await cur.fetchone()
+            return dict(row) if row else {"text": "Открыта запись на тренировку."}
+
+    async def set_notify_settings(self, text: str) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "UPDATE notify_settings SET text=?, updated_at=? WHERE id=1",
+                (text, datetime.utcnow().isoformat()),
             )
             await db.commit()
