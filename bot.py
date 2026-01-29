@@ -257,8 +257,8 @@ async def send_open_notifications() -> None:
         starts = parse_dt(slot["starts_at"])
         open_dt = compute_open_datetime(starts, settings["open_days_before"], settings["open_time"])
         close_dt = compute_close_datetime(starts, settings["close_mode"], settings.get("close_minutes_before"))
-        # send only at the moment of opening (within 1 minute window)
-        if not (open_dt <= now < open_dt + timedelta(minutes=1)):
+        # send once after opening, up to close time
+        if not (open_dt <= now < close_dt):
             continue
         users = await db.list_users_with_notify(slot["group_id"])
         if not users:
@@ -452,14 +452,11 @@ async def cb_schedule(call: CallbackQuery):
     file_id = g.get("schedule_file_id")
 
     if not file_id:
-
         await call.message.edit_text("Расписание ещё не загружено.", reply_markup=kb_back("main"))
-
         await call.answer()
-
         return
 
-        await bot.send_photo(
+    await bot.send_photo(
         call.from_user.id,
         photo=file_id,
         caption=f"Расписание: <b>{g['title']}</b>",
