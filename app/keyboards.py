@@ -11,7 +11,6 @@ def kb_main(is_admin: bool):
         [InlineKeyboardButton(text="🗓 Расписание", callback_data="sched:show")],
         [InlineKeyboardButton(text="🏆 Турниры", callback_data="tour:list")],
         [InlineKeyboardButton(text="💳 Оплата", callback_data="pay:info")],
-        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="user:settings")],
     ]
     if is_admin:
         rows.append([InlineKeyboardButton(text="🛠 Админ меню", callback_data="admin:root")])
@@ -30,7 +29,6 @@ def kb_admin_root():
         [InlineKeyboardButton(text="📅 Занятия (слоты)", callback_data="admin:slots")],
         [InlineKeyboardButton(text="🏆 Турниры", callback_data="admin:tournaments")],
         [InlineKeyboardButton(text="💳 Оплата: реквизиты", callback_data="admin:payset")],
-        [InlineKeyboardButton(text="🔔 Оповещения", callback_data="admin:notifyset")],
         [InlineKeyboardButton(text="📣 Рассылка", callback_data="admin:bc")],
         [InlineKeyboardButton(text="🧹 Сбросить всё", callback_data="admin:reset")],
         [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="main")],
@@ -54,7 +52,6 @@ def kb_pagination(prefix: str, page: int, has_prev: bool, has_next: bool, extra_
 
 def kb_group_actions(group_id: int):
     return ikb([
-        [InlineKeyboardButton(text="✏️ Изменить название", callback_data=f"admin:group:{group_id}:title")],
         [InlineKeyboardButton(text="🖼 Загрузить расписание", callback_data=f"admin:group:{group_id}:sched")],
         [InlineKeyboardButton(text="⚙️ Настройки записи/отмены", callback_data=f"admin:group:{group_id}:settings")],
         [InlineKeyboardButton(text="👤 Ученики", callback_data=f"admin:group:{group_id}:users:page:0")],
@@ -62,32 +59,20 @@ def kb_group_actions(group_id: int):
     ])
 
 
-def kb_slot_actions(
-    slot_id: int,
-    can_join: bool,
-    can_leave: bool,
-    can_join_second: bool = False,
-    can_admin_book: bool = False,
-):
+def kb_slot_actions(slot_id: int, can_join: bool, can_leave: bool):
     rows = []
     if can_join:
         rows.append([InlineKeyboardButton(text="✅ Записаться", callback_data=f"train:join:{slot_id}")])
-    if can_join_second:
-        rows.append([InlineKeyboardButton(text="👥 Записать второго человека", callback_data=f"train:join2:{slot_id}")])
-    if can_admin_book:
-        rows.append([InlineKeyboardButton(text="➕ Записать человека", callback_data=f"admin:training:book:{slot_id}:user")])
     if can_leave:
         rows.append([InlineKeyboardButton(text="❌ Отменить запись", callback_data=f"train:leave:{slot_id}")])
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="train:list")])
     return ikb(rows)
 
 
-def kb_tour_actions(tournament_id: int, can_join: bool, can_leave: bool, is_waitlist: bool, can_join_second: bool = False):
+def kb_tour_actions(tournament_id: int, can_join: bool, can_leave: bool, is_waitlist: bool):
     rows = []
     if can_join:
         rows.append([InlineKeyboardButton(text="✅ Записаться", callback_data=f"tour:join:{tournament_id}")])
-    if can_join_second:
-        rows.append([InlineKeyboardButton(text="👥 Записать второго человека", callback_data=f"tour:join2:{tournament_id}")])
     if can_leave:
         text = "❌ Выйти из листа ожидания" if is_waitlist else "❌ Отменить запись"
         rows.append([InlineKeyboardButton(text=text, callback_data=f"tour:leave:{tournament_id}")])

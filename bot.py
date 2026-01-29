@@ -3,8 +3,6 @@ import asyncio
 import logging
 
 import os
-import shutil
-import sqlite3
 
 import secrets
 
@@ -35,8 +33,7 @@ from app.keyboards import (
 )
 from app.utils import (
 
-    tz_now, parse_dt, fmt_dt, fmt_dt_with_weekday,
-    compute_open_datetime, compute_close_datetime, compute_cancel_deadline
+    tz_now, parse_dt, fmt_dt, compute_open_datetime, compute_close_datetime, compute_cancel_deadline
 
 )
 
@@ -129,76 +126,6 @@ def next_weekday_datetime(weekday: int, time_str: str):
     return target
 
 
-def find_latest_backup(backup_dir: str) -> Optional[str]:
-    if not os.path.isdir(backup_dir):
-        return None
-    candidates = []
-    for name in os.listdir(backup_dir):
-        if name.startswith("trainer_bot_") and name.endswith(".db"):
-            path = os.path.join(backup_dir, name)
-            if os.path.isfile(path):
-                candidates.append(path)
-    if not candidates:
-        return None
-    return max(candidates, key=os.path.getmtime)
-
-
-def is_default_db(path: str) -> bool:
-    if not os.path.exists(path):
-        return True
-    if os.path.getsize(path) == 0:
-        return True
-    try:
-        conn = sqlite3.connect(path)
-        try:
-            cur = conn.execute("SELECT COUNT(*) FROM users")
-            row = cur.fetchone()
-            users = int(row[0]) if row else 0
-            return users == 0
-        finally:
-            conn.close()
-    except Exception:
-        return True
-
-
-def restore_db_if_default(db_path: str, backup_dir: str) -> None:
-    if not is_default_db(db_path):
-        return
-    latest = find_latest_backup(backup_dir)
-    if not latest:
-        return
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    shutil.copy2(latest, db_path)
-    logger.info("DB restored from backup: %s", latest)
-
-
-def make_daily_backup_name(backup_dir: str, now_dt) -> str:
-    date_str = now_dt.strftime("%Y-%m-%d")
-    return os.path.join(backup_dir, f"trainer_bot_{date_str}.db")
-
-
-
-
-async def backup_loop(db_path: str, backup_dir: str, hour: int = 3, minute: int = 0) -> None:
-    while True:
-        now = tz_now(TZ_OFFSET_HOURS)
-        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if next_run <= now:
-            next_run = next_run + timedelta(days=1)
-        sleep_seconds = (next_run - now).total_seconds()
-        await asyncio.sleep(max(5, sleep_seconds))
-        try:
-            if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
-                os.makedirs(backup_dir, exist_ok=True)
-                dst = make_daily_backup_name(backup_dir, tz_now(TZ_OFFSET_HOURS))
-                shutil.copy2(db_path, dst)
-                logger.info("Daily backup created: %s", dst)
-        except Exception as exc:
-            logger.exception("backup_loop error: %s", exc)
-
-
-
-
 
 async def show_main(target: Message | CallbackQuery, user_id: int, text: Optional[str] = None):
 
@@ -217,79 +144,14 @@ async def show_main(target: Message | CallbackQuery, user_id: int, text: Optiona
     kb = kb_main(is_admin(user_id))
 
     if isinstance(target, CallbackQuery):
-        msg = target.message
-        if getattr(msg, "photo", None):
-            try:
-                await msg.delete()
-            except Exception:
-                pass
-            await bot.send_message(user_id, msg_text, reply_markup=kb)
-        else:
-            await msg.edit_text(msg_text, reply_markup=kb)
+
+        await target.message.edit_text(msg_text, reply_markup=kb)
+
         await target.answer()
 
     else:
 
         await target.answer(msg_text, reply_markup=kb)
-
-
-async def send_open_notifications() -> None:
-    now = tz_now(TZ_OFFSET_HOURS)
-    from_iso = (now - timedelta(days=1)).isoformat()
-    to_iso = (now + timedelta(days=30)).isoformat()
-    slots = await db.list_active_slots(from_iso, to_iso, limit=300)
-    notify_settings = await db.get_notify_settings()
-    base_text = (notify_settings.get("text") or "Открыта запись на тренировку.").strip()
-    for slot in slots:
-        settings = await db.get_group_settings(slot["group_id"])
-        if not settings:
-            continue
-        starts = parse_dt(slot["starts_at"])
-        open_dt = compute_open_datetime(starts, settings["open_days_before"], settings["open_time"])
-        close_dt = compute_close_datetime(starts, settings["close_mode"], settings.get("close_minutes_before"))
-        # send only at the moment of opening (within 1 minute window)
-        if not (open_dt <= now < open_dt + timedelta(minutes=1)):
-            continue
-        users = await db.list_users_with_notify(slot["group_id"])
-        if not users:
-            continue
-        notified = set(await db.list_notified_user_ids(slot["slot_id"]))
-        booked_users = set(await db.list_active_booking_user_ids("training", slot["slot_id"]))
-        g = await db.get_group(slot["group_id"])
-        g_title = g["title"] if g else f"#{slot['group_id']}"
-        text = (
-            f"{base_text}\n"
-            f"Группа: <b>{g_title}</b>\n"
-            f"Дата: <b>{fmt_dt_with_weekday(starts)}</b>\n\n"
-            "Можно записаться прямо здесь."
-        )
-        kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=[
-            [__import__("aiogram").types.InlineKeyboardButton(
-                text="✅ Записаться",
-                callback_data=f"train:join:{slot['slot_id']}",
-            )],
-            [__import__("aiogram").types.InlineKeyboardButton(
-                text="📋 Открыть занятие",
-                callback_data=f"train:open:{slot['slot_id']}",
-            )],
-        ])
-        for uid in users:
-            if uid in notified or uid in booked_users:
-                continue
-            try:
-                await bot.send_message(uid, text, reply_markup=kb)
-                await db.mark_open_notified(uid, slot["slot_id"])
-            except Exception:
-                pass
-
-
-async def notify_open_loop() -> None:
-    while True:
-        try:
-            await send_open_notifications()
-        except Exception as exc:
-            logger.exception("notify_open_loop error: %s", exc)
-        await asyncio.sleep(60)
 
 
 
@@ -385,44 +247,6 @@ async def cb_pay_info(call: CallbackQuery):
     await call.message.edit_text(text, reply_markup=kb_back("main"))
 
     await call.answer()
-
-
-# ---------------- user settings ----------------
-
-async def build_user_settings_view(user_id: int):
-    u = await db.get_user(user_id)
-    enabled = bool(u and u.get("notify_open"))
-    status = "включены" if enabled else "выключены"
-    text = (
-        "<b>Настройки</b>\n"
-        f"Оповещения об открытии записи на тренировки: <b>{status}</b>"
-    )
-    rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(
-            text="🔔 Включить оповещения" if not enabled else "🔕 Выключить оповещения",
-            callback_data="user:settings:notify_open:toggle",
-        )],
-        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="main")],
-    ]
-    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-    return text, kb
-
-
-@router.callback_query(F.data == "user:settings")
-async def cb_user_settings(call: CallbackQuery):
-    text, kb = await build_user_settings_view(call.from_user.id)
-    await call.message.edit_text(text, reply_markup=kb)
-    await call.answer()
-
-
-@router.callback_query(F.data == "user:settings:notify_open:toggle")
-async def cb_user_settings_notify_open_toggle(call: CallbackQuery):
-    u = await db.get_user(call.from_user.id)
-    enabled = bool(u and u.get("notify_open"))
-    await db.set_user_notify_open(call.from_user.id, not enabled)
-    text, kb = await build_user_settings_view(call.from_user.id)
-    await call.message.edit_text(text, reply_markup=kb)
-    await call.answer("Оповещения " + ("включены" if not enabled else "выключены"))
 @router.callback_query(F.data == "sched:show")
 
 async def cb_schedule(call: CallbackQuery):
@@ -449,16 +273,10 @@ async def cb_schedule(call: CallbackQuery):
 
         return
 
-        await bot.send_photo(
-        call.from_user.id,
-        photo=file_id,
-        caption=f"Расписание: <b>{g['title']}</b>",
-        reply_markup=kb_back("main"),
-    )
-    try:
-        await call.message.delete()
-    except Exception:
-        pass
+    await call.message.edit_text("\u0420\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043e\u0442\u043a\u0440\u044b\u0442\u043e \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u044b\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c.", reply_markup=kb_back("main"))
+
+    await bot.send_photo(call.from_user.id, photo=file_id, caption=f"Расписание: <b>{g['title']}</b>", reply_markup=kb_back("main"))
+
     await call.answer()
 
 
@@ -507,7 +325,7 @@ async def cb_train_list(call: CallbackQuery):
 
         rows.append([__import__("aiogram").types.InlineKeyboardButton(
 
-            text=f"{fmt_dt_with_weekday(dt)} (лимит {s['capacity']})",
+            text=f"{fmt_dt(dt)} (лимит {s['capacity']})",
 
             callback_data=f"train:open:{s['slot_id']}"
 
@@ -564,16 +382,11 @@ async def cb_train_open(call: CallbackQuery):
     booked = await db.count_active_bookings("training", slot_id)
 
     my_booking = await db.get_user_booking(call.from_user.id, "training", slot_id)
-    my_seats = int(my_booking.get("seats", 1)) if my_booking else 0
+
+
 
     can_join = (now >= open_dt) and (now < close_dt) and (booked < slot["capacity"]) and (my_booking is None)
-    can_join_second = (
-        (now >= open_dt)
-        and (now < close_dt)
-        and (booked < slot["capacity"])
-        and (my_booking is not None)
-        and (my_seats < 2)
-    )
+
     can_leave = (my_booking is not None) and (now < cancel_deadline)
 
 
@@ -582,7 +395,7 @@ async def cb_train_open(call: CallbackQuery):
 
         f"<b>Занятие</b>\n"
 
-        f"🕒 {fmt_dt_with_weekday(starts)}\n"
+        f"🕒 {fmt_dt(starts)}\n"
 
         f"👥 Мест: {booked}/{slot['capacity']}\n"
 
@@ -601,22 +414,16 @@ async def cb_train_open(call: CallbackQuery):
         text += f"\nЗапись закрыта."
 
     if my_booking:
-        seats_info = f" ({my_seats} чел.)" if my_seats > 1 else ""
-        if now < cancel_deadline:
-            text += f"\n\nВы записаны{seats_info}. Отмена возможна до <b>{fmt_dt(cancel_deadline)}</b>."
-        else:
-            text += f"\n\nВы записаны{seats_info}. Отмена уже недоступна."
 
-    await call.message.edit_text(
-        text,
-        reply_markup=kb_slot_actions(
-            slot_id,
-            can_join,
-            can_leave,
-            can_join_second,
-            can_admin_book=is_admin(call.from_user.id),
-        ),
-    )
+        if now < cancel_deadline:
+
+            text += f"\n\nВы записаны. Отмена возможна до <b>{fmt_dt(cancel_deadline)}</b>."
+
+        else:
+
+            text += f"\n\nВы записаны. Отмена уже недоступна."
+
+    await call.message.edit_text(text, reply_markup=kb_slot_actions(slot_id, can_join, can_leave))
 
     await call.answer()
 
@@ -690,51 +497,6 @@ async def cb_train_join(call: CallbackQuery):
 
 
 
-@router.callback_query(F.data.startswith("train:join2:"))
-async def cb_train_join_second(call: CallbackQuery):
-    slot_id = int(call.data.split(":")[-1])
-    slot = await db.get_slot(slot_id)
-    if not slot:
-        await call.answer("Слот не найден.", show_alert=True)
-        return
-    u = await db.get_user(call.from_user.id)
-    if not u or u.get("group_id") != slot["group_id"]:
-        await call.answer("Это занятие не вашей группы.", show_alert=True)
-        return
-    settings = await db.get_group_settings(slot["group_id"])
-    starts = parse_dt(slot["starts_at"])
-    open_dt = compute_open_datetime(starts, settings["open_days_before"], settings["open_time"])
-    close_dt = compute_close_datetime(starts, settings["close_mode"], settings.get("close_minutes_before"))
-    now = tz_now(TZ_OFFSET_HOURS)
-    if now < open_dt:
-        await call.answer(f"Запись откроется {fmt_dt(open_dt)}", show_alert=True)
-        return
-    if now >= close_dt:
-        await call.answer("Запись закрыта.", show_alert=True)
-        return
-
-    booked = await db.count_active_bookings("training", slot_id)
-    if booked >= slot["capacity"]:
-        await call.answer("Мест нет.", show_alert=True)
-        return
-
-    existing = await db.get_user_booking(call.from_user.id, "training", slot_id)
-    if not existing:
-        await db.create_booking(call.from_user.id, "training", slot_id)
-        await call.answer("Записал ✅")
-        await cb_train_open(call)
-        return
-
-    current_seats = int(existing.get("seats", 1))
-    if current_seats >= 2:
-        await call.answer("Вы уже записали двоих.", show_alert=True)
-        return
-
-    await db.update_booking_seats(existing["booking_id"], current_seats + 1)
-    await call.answer("Записал второго человека ✅")
-    await cb_train_open(call)
-
-
 @router.callback_query(F.data.startswith("train:leave:"))
 
 async def cb_train_leave(call: CallbackQuery):
@@ -771,38 +533,11 @@ async def cb_train_leave(call: CallbackQuery):
 
         return
 
-    seats = int(booking.get("seats", 1))
-    if seats > 1:
-        await db.update_booking_seats(booking["booking_id"], seats - 1)
-        await call.answer("Убрали одного человека ❌")
-    else:
-        await db.cancel_booking(booking["booking_id"])
-        await call.answer("Отменил ❌")
+    await db.cancel_booking(booking["booking_id"])
+
+    await call.answer("Отменил ❌")
 
     await cb_train_open(call)
-
-
-@router.callback_query(F.data.startswith("admin:training:book:"))
-async def cb_admin_training_book(call: CallbackQuery):
-    if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
-        return
-    parts = call.data.split(":")
-    slot_id = int(parts[3])
-    back_mode = parts[4] if len(parts) > 4 else "admin"
-    slot = await db.get_slot(slot_id)
-    if not slot:
-        await call.answer("Слот не найден.", show_alert=True)
-        return
-    await db.set_mode(call.from_user.id, f"admin_training_book:{slot_id}:{back_mode}")
-    back_to = f"admin:slot:open:{slot_id}" if back_mode == "admin" else f"train:open:{slot_id}"
-    await call.message.edit_text(
-        "Введите имя человека для записи.\n"
-        "Например: Иван Иванов\n"
-        "/cancel — отмена.",
-        reply_markup=kb_back(back_to),
-    )
-    await call.answer()
 
 
 
@@ -859,19 +594,11 @@ async def cb_tour_open(call: CallbackQuery):
     booked = await db.count_active_bookings("tournament", tournament_id)
     waitlist_count = await db.count_bookings("tournament", tournament_id, "waitlist")
     my_booking = await db.get_user_booking_any(call.from_user.id, "tournament", tournament_id)
-    my_active_booking = await db.get_user_booking(call.from_user.id, "tournament", tournament_id)
-    my_seats = int(my_active_booking.get("seats", 1)) if my_active_booking else 0
 
     waitlist_limit = int(t.get("waitlist_limit") or 0)
     has_waitlist_spots = waitlist_limit > 0 and waitlist_count < waitlist_limit
 
     can_join = (now < close_dt) and (my_booking is None) and (booked < t["capacity"] or has_waitlist_spots)
-    can_join_second = (
-        (now < close_dt)
-        and (my_active_booking is not None)
-        and (my_seats < 2)
-        and (booked < t["capacity"])
-    )
     can_leave = (my_booking is not None) and (now < cancel_deadline)
     is_waitlist = my_booking is not None and my_booking.get("status") == "waitlist"
 
@@ -890,14 +617,13 @@ async def cb_tour_open(call: CallbackQuery):
         if is_waitlist:
             text += "\n\nВы в листе ожидания."
         else:
-            seats_info = f" ({my_seats} чел.)" if my_seats > 1 else ""
-            text += f"\n\nВы записаны{seats_info}."
+            text += "\n\nВы записаны."
         if now < cancel_deadline:
             text += f" Отмена возможна до <b>{fmt_dt(cancel_deadline)}</b>."
         else:
             text += " Отмена уже недоступна."
 
-    await call.message.edit_text(text, reply_markup=kb_tour_actions(tournament_id, can_join, can_leave, is_waitlist, can_join_second))
+    await call.message.edit_text(text, reply_markup=kb_tour_actions(tournament_id, can_join, can_leave, is_waitlist))
     await call.answer()
 
 @router.callback_query(F.data.startswith("tour:join:"))
@@ -940,50 +666,6 @@ async def cb_tour_join(call: CallbackQuery):
         return
     await cb_tour_open(call)
 
-@router.callback_query(F.data.startswith("tour:join2:"))
-async def cb_tour_join_second(call: CallbackQuery):
-    tournament_id = int(call.data.split(":")[-1])
-    t = await db.get_tournament(tournament_id)
-    if not t:
-        await call.answer("Турнир не найден.", show_alert=True)
-        return
-    u = await db.get_user(call.from_user.id)
-    gid = u.get("group_id") if u else None
-    if not gid:
-        await call.answer("Сначала нужно быть в группе.", show_alert=True)
-        return
-    groups = await db.list_tournament_groups(tournament_id)
-    if gid not in groups:
-        await call.answer("Этот турнир не для вашей группы.", show_alert=True)
-        return
-    starts = parse_dt(t["starts_at"])
-    close_dt = compute_close_datetime(starts, t["close_mode"], t.get("close_minutes_before"))
-    now = tz_now(TZ_OFFSET_HOURS)
-    if now >= close_dt:
-        await call.answer("Запись закрыта.", show_alert=True)
-        return
-
-    booked = await db.count_active_bookings("tournament", tournament_id)
-    if booked >= t["capacity"]:
-        await call.answer("Мест нет.", show_alert=True)
-        return
-
-    existing_active = await db.get_user_booking(call.from_user.id, "tournament", tournament_id)
-    if not existing_active:
-        await db.create_booking(call.from_user.id, "tournament", tournament_id, status="active")
-        await call.answer("Записал ✅")
-        await cb_tour_open(call)
-        return
-
-    current_seats = int(existing_active.get("seats", 1))
-    if current_seats >= 2:
-        await call.answer("Вы уже записали двоих.", show_alert=True)
-        return
-
-    await db.update_booking_seats(existing_active["booking_id"], current_seats + 1)
-    await call.answer("Записал второго человека ✅")
-    await cb_tour_open(call)
-
 @router.callback_query(F.data.startswith("tour:leave:"))
 async def cb_tour_leave(call: CallbackQuery):
     tournament_id = int(call.data.split(":")[-1])
@@ -1001,13 +683,6 @@ async def cb_tour_leave(call: CallbackQuery):
     if now >= cancel_deadline:
         await call.answer("Отмена уже недоступна.", show_alert=True)
         return
-    seats = int(booking.get("seats", 1))
-    if booking.get("status") == "active" and seats > 1:
-        await db.update_booking_seats(booking["booking_id"], seats - 1)
-        await call.answer("Убрали одного человека ❌")
-        await cb_tour_open(call)
-        return
-
     await db.cancel_booking(booking["booking_id"])
 
     if booking.get("status") == "active":
@@ -1183,18 +858,6 @@ async def cb_admin_group_open(call: CallbackQuery):
 
     )
 
-    await call.answer()
-
-
-
-@router.callback_query(F.data.regexp(r"^admin:group:\d+:title$"))
-async def cb_admin_group_title(call: CallbackQuery):
-    if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
-        return
-    group_id = int(call.data.split(":")[2])
-    await db.set_mode(call.from_user.id, f"admin_group_title:{group_id}")
-    await call.message.edit_text("Введите новое название группы.\n/cancel — отмена.", reply_markup=kb_back(f"admin:group:{group_id}"))
     await call.answer()
 
 
@@ -1657,11 +1320,9 @@ async def cb_admin_tournament_users(call: CallbackQuery):
     for i, it in enumerate(items, start=offset+1):
         uname = f"@{it['username']}" if it.get('username') else ""
         st = "\u2705" if it.get("pay_status") == "confirmed" else "\u23f3"
-        seats = int(it.get("seats", 1))
-        seat_suffix = f" x{seats}" if seats > 1 else ""
-        lines.append(f"{i}) {it['full_name']} {uname}{seat_suffix} \u2014 {st}".strip())
+        lines.append(f"{i}) {it['full_name']} {uname} \u2014 {st}".strip())
         rows.append([__import__("aiogram").types.InlineKeyboardButton(
-            text=f"{st} {it['full_name']}{seat_suffix}",
+            text=f"{st} {it['full_name']}",
             callback_data=f"admin:pay:tournament:toggle:{it['booking_id']}:{tournament_id}:{page}"
         )])
     nav = []
@@ -2234,9 +1895,11 @@ async def cb_admin_slot_open(call: CallbackQuery):
     # reuse message keyboard: open users list
 
     rows=[
+
         [__import__("aiogram").types.InlineKeyboardButton(text="👥 Записанные", callback_data=f"admin:training:{slot_id}:users:page:0")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="➕ Записать человека", callback_data=f"admin:training:book:{slot_id}:admin")],
+
         [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin:slot:list:{slot['group_id']}")]
+
     ]
 
     kb=__import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
@@ -2278,13 +1941,17 @@ async def cb_admin_training_users(call: CallbackQuery):
     for i, it in enumerate(items, start=offset+1):
 
         st="✅" if it.get("pay_status")=="confirmed" else "⏳"
+
         uname=f"@{it['username']}" if it.get("username") else ""
-        seats = int(it.get("seats", 1))
-        seat_suffix = f" x{seats}" if seats > 1 else ""
-        lines.append(f"{i}) {it['full_name']} {uname}{seat_suffix} — {st}".strip())
+
+        lines.append(f"{i}) {it['full_name']} {uname} — {st}".strip())
+
         rows.append([__import__("aiogram").types.InlineKeyboardButton(
-            text=f"{st} {it['full_name']}{seat_suffix}",
+
+            text=f"{st} {it['full_name']}",
+
             callback_data=f"admin:pay:toggle:{it['booking_id']}:{slot_id}:{page}"
+
         )])
 
     nav=[]
@@ -2294,10 +1961,6 @@ async def cb_admin_training_users(call: CallbackQuery):
     if offset+limit<total: nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"admin:training:{slot_id}:users:page:{page+1}"))
 
     if nav: rows.append(nav)
-    rows.append([__import__("aiogram").types.InlineKeyboardButton(
-        text="➕ Записать человека",
-        callback_data=f"admin:training:book:{slot_id}:admin"
-    )])
 
     rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin:slot:open:{slot_id}")])
 
@@ -2384,39 +2047,6 @@ async def cb_admin_payset(call: CallbackQuery):
     ]
     kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
     await call.message.edit_text(text, reply_markup=kb)
-    await call.answer()
-
-@router.callback_query(F.data == "admin:notifyset")
-async def cb_admin_notifyset(call: CallbackQuery):
-    if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
-        return
-    s = await db.get_notify_settings()
-    text = (
-        "<b>Оповещения: настройки</b>\n\n"
-        f"Текущий текст:\n{s.get('text','')}\n\n"
-        "Используйте кнопку ниже для изменения."
-    )
-    rows = [
-        [__import__("aiogram").types.InlineKeyboardButton(text="✏️ Изменить текст", callback_data="admin:notifyset:edit")],
-        [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
-    ]
-    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
-    await call.message.edit_text(text, reply_markup=kb)
-    await call.answer()
-
-@router.callback_query(F.data == "admin:notifyset:edit")
-async def cb_admin_notifyset_edit(call: CallbackQuery):
-    if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа.", show_alert=True)
-        return
-    await db.set_mode(call.from_user.id, "admin_notifyset:text")
-    await call.message.edit_text(
-        "Введите текст уведомления.\n"
-        "Можно использовать несколько строк.\n"
-        "/cancel — отмена.",
-        reply_markup=kb_back("admin:notifyset"),
-    )
     await call.answer()
 
 
@@ -2635,51 +2265,6 @@ async def message_router(message: Message):
 
         return
 
-
-
-    # group title update
-    if mode.startswith("admin_group_title:"):
-        group_id = int(mode.split(":")[1])
-        title = (message.text or "").strip()
-        if not title:
-            await message.answer("Пусто. Введите название группы.")
-            return
-        await db.update_group_title(group_id, title)
-        await db.set_mode(message.from_user.id, None)
-        g = await db.get_group(group_id)
-        title_out = g["title"] if g else title
-        await message.answer(
-            f"Название обновлено: <b>{title_out}</b>\nID: {group_id}",
-            reply_markup=kb_group_actions(group_id),
-        )
-        return
-
-
-    if mode.startswith("admin_training_book:"):
-        parts = mode.split(":")
-        slot_id = int(parts[1])
-        back_mode = parts[2] if len(parts) > 2 else "admin"
-        name = (message.text or "").strip()
-        if not name:
-            await message.answer("Пусто. Введите имя.")
-            return
-        slot = await db.get_slot(slot_id)
-        if not slot:
-            await message.answer("Слот не найден.", reply_markup=kb_admin_root())
-            await db.set_mode(message.from_user.id, None)
-            return
-        booked = await db.count_active_bookings("training", slot_id)
-        if booked >= slot["capacity"]:
-            back_to = f"admin:slot:open:{slot_id}" if back_mode == "admin" else f"train:open:{slot_id}"
-            await message.answer("Мест нет.", reply_markup=kb_back(back_to))
-            await db.set_mode(message.from_user.id, None)
-            return
-        guest_id = await db.create_guest_user(name, None)
-        await db.create_booking(guest_id, "training", slot_id, status="active")
-        await db.set_mode(message.from_user.id, None)
-        back_to = f"admin:slot:open:{slot_id}" if back_mode == "admin" else f"train:open:{slot_id}"
-        await message.answer("Записал ✅", reply_markup=kb_back(back_to))
-        return
 
 
     # group settings update
@@ -3040,17 +2625,6 @@ async def message_router(message: Message):
         return
 
 
-    if mode == "admin_notifyset:text":
-        txt = (message.text or "").strip()
-        if not txt:
-            await message.answer("Пустой текст.")
-            return
-        await db.set_notify_settings(txt)
-        await db.set_mode(message.from_user.id, None)
-        await message.answer("Текст уведомления сохранён.", reply_markup=kb_back("admin:notifyset"))
-        return
-
-
     # broadcast
     if mode == "admin_bc:compose":
         txt = (message.text or "").strip()
@@ -3096,8 +2670,6 @@ async def message_router(message: Message):
 
 async def main():
 
-    backup_dir = os.path.join(os.path.dirname(DATABASE_PATH) or ".", "backup")
-    restore_db_if_default(DATABASE_PATH, backup_dir)
     await db.init()
     for uid in ADMIN_IDS:
         await db.add_admin(uid)
@@ -3106,13 +2678,7 @@ async def main():
 
     logger.info("DB initialized")
 
-    notify_task = asyncio.create_task(notify_open_loop())
-    backup_task = asyncio.create_task(backup_loop(DATABASE_PATH, backup_dir))
-    try:
-        await dp.start_polling(bot)
-    finally:
-        notify_task.cancel()
-        backup_task.cancel()
+    await dp.start_polling(bot)
 
 
 

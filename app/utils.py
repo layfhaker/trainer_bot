@@ -12,12 +12,6 @@ def fmt_dt(dt: datetime) -> str:
     # e.g. 24.01 19:00
     return dt.strftime("%d.%m %H:%M")
 
-def fmt_dt_with_weekday(dt: datetime) -> str:
-    # e.g. Пн 24.01 19:00
-    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-    wd = weekdays[dt.weekday()]
-    return f"{wd} {dt.strftime('%d.%m %H:%M')}"
-
 def compute_open_datetime(starts_at: datetime, open_days_before: int, open_time_hhmm: str) -> datetime:
     hh, mm = open_time_hhmm.split(":")
     base = (starts_at - timedelta(days=open_days_before)).astimezone(starts_at.tzinfo)
