@@ -14,10 +14,7 @@ ENV/
 
 
 
-# Local databases
-*.db
-*.sqlite
-*.sqlite3
+
 
 # Logs
 *.log
