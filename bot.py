@@ -43,7 +43,17 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-DATABASE_PATH = os.getenv("DATABASE_PATH", "trainer_bot.db").strip()
+_env_db = os.getenv("DATABASE_PATH", "").strip()
+if _env_db:
+    DATABASE_PATH = _env_db
+else:
+    # Prefer host-mounted volume if present, otherwise repo data DB.
+    if os.path.exists("/data/trainer_bot.db"):
+        DATABASE_PATH = "/data/trainer_bot.db"
+    elif os.path.exists("data/trainer_bot.db"):
+        DATABASE_PATH = "data/trainer_bot.db"
+    else:
+        DATABASE_PATH = "trainer_bot.db"
 
 TZ_OFFSET_HOURS = int(os.getenv("TZ_OFFSET_HOURS", "3").strip() or "3")
 
