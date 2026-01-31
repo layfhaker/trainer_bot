@@ -535,9 +535,11 @@ async def cb_train_list(call: CallbackQuery):
     # показываем только будущие/текущие слоты, прошедшие скрываем
     from_iso = now.isoformat()
 
-    to_iso = (now + timedelta(days=21)).isoformat()
+    to_iso = (now + timedelta(days=7)).isoformat()
 
     slots = await db.list_slots_for_group(gid, from_iso, to_iso, limit=30)
+    # auto-advance weekly slots that уже прошли
+    slots = [await roll_slot_forward(s) for s in slots]
 
     if not slots:
 
@@ -581,7 +583,7 @@ async def cb_train_open(call: CallbackQuery):
 
     slot_id = int(call.data.split(":")[-1])
 
-    slot = await db.get_slot(slot_id)
+    slot = await roll_slot_forward(await db.get_slot(slot_id))
 
     if not slot or not slot.get("is_active"):
 
@@ -732,7 +734,7 @@ async def cb_train_join(call: CallbackQuery):
 
     slot_id = int(call.data.split(":")[-1])
 
-    slot = await db.get_slot(slot_id)
+    slot = await roll_slot_forward(await db.get_slot(slot_id))
 
     if not slot:
 
@@ -1167,6 +1169,35 @@ async def show_common_groups(call: CallbackQuery, page: int) -> None:
     await call.answer()
 
 
+async def roll_slot_forward(slot: dict) -> dict:
+    """
+    Advance weekly slot to the next upcoming week if it is already started.
+    Cancels existing bookings, resets capacity to base_capacity, skips exceptions.
+    """
+    if not slot:
+        return slot
+    now = tz_now(TZ_OFFSET_HOURS)
+    starts = parse_dt(slot["starts_at"])
+    changed = False
+    base_cap = int(slot.get("base_capacity") or slot.get("capacity") or 0)
+    while starts < now:
+        # skip dates marked as no-session
+        next_date = (starts + timedelta(days=7))
+        while await db.has_slot_exception(slot["slot_id"], next_date.date().isoformat()):
+            next_date += timedelta(days=7)
+        starts = next_date
+        await db.cancel_slot_bookings(slot["slot_id"])
+        await db.update_slot_time_capacity(slot["slot_id"], starts.isoformat(), base_cap)
+        slot["starts_at"] = starts.isoformat()
+        slot["capacity"] = base_cap
+        slot["base_capacity"] = base_cap
+        changed = True
+    if changed:
+        # refresh from DB to keep consistency
+        slot = await db.get_slot(slot["slot_id"]) or slot
+    return slot
+
+
 async def show_group_chat_picker(call: CallbackQuery, group_id: int, page: int) -> None:
     if not is_admin(call.from_user.id):
         await call.answer("Нет доступа.", show_alert=True)
@@ -1254,6 +1285,28 @@ async def cb_admin_commongroupchat(call: CallbackQuery):
     await db.set_group_chat(group_id, chat_id)
     await call.answer("Привязано.")
     await show_group_chat_picker(call, group_id, page)
+
+
+@router.callback_query(F.data.startswith("admin:slot:skip:"))
+async def cb_admin_slot_skip(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    slot_id = int(call.data.split(":")[-1])
+    slot = await db.get_slot(slot_id)
+    if not slot:
+        await call.answer("Слот не найден.", show_alert=True)
+        return
+    starts = parse_dt(slot["starts_at"])
+    await db.add_slot_exception(slot_id, starts.date().isoformat())
+    await db.cancel_slot_bookings(slot_id)
+    await roll_slot_forward(slot)
+    await call.answer("Ближайшее занятие пропущено.")
+    # reopen admin slot view
+    await cb_admin_slot_open(CallbackQuery(
+        id=call.id, from_user=call.from_user, chat_instance=call.chat_instance,
+        message=call.message, data=f"admin:slot:open:{slot_id}"
+    ))
 
 
 @router.callback_query(F.data == "admin:reset")
@@ -2426,7 +2479,7 @@ async def cb_admin_slot_open(call: CallbackQuery):
 
     slot_id=int(call.data.split(":")[-1])
 
-    slot=await db.get_slot(slot_id)
+    slot=await roll_slot_forward(await db.get_slot(slot_id))
 
     if not slot:
 
@@ -2458,6 +2511,7 @@ async def cb_admin_slot_open(call: CallbackQuery):
         [__import__("aiogram").types.InlineKeyboardButton(text="👥 Записанные", callback_data=f"admin:training:{slot_id}:users:page:0")],
         [__import__("aiogram").types.InlineKeyboardButton(text="➕ Записать человека", callback_data=f"admin:training:book:{slot_id}:admin")],
         [__import__("aiogram").types.InlineKeyboardButton(text="➕ Увеличить места", callback_data=f"admin:slot:capadd:{slot_id}:admin")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="🚫 Нет занятия", callback_data=f"admin:slot:skip:{slot_id}")],
         [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin:slot:list:{slot['group_id']}")]
     ]
 

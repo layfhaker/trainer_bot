@@ -45,6 +45,13 @@ CREATE TABLE IF NOT EXISTS group_chats (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS slot_exceptions (
+  slot_id INTEGER NOT NULL,
+  starts_on TEXT NOT NULL, -- YYYY-MM-DD date to skip
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(slot_id, starts_on)
+);
+
 CREATE TABLE IF NOT EXISTS invites (
   token TEXT PRIMARY KEY,
   group_id INTEGER NOT NULL,
@@ -57,6 +64,7 @@ CREATE TABLE IF NOT EXISTS training_slots (
   group_id INTEGER NOT NULL,
   starts_at TEXT NOT NULL,
   capacity INTEGER NOT NULL,
+  base_capacity INTEGER NOT NULL DEFAULT 0,
   note TEXT,
   is_active INTEGER NOT NULL DEFAULT 1
 );
@@ -205,8 +213,17 @@ class DB:
         existing_bookings = {r["name"] for r in rows}
         if "seats" not in existing_bookings:
             migrations.append("ALTER TABLE bookings ADD COLUMN seats INTEGER NOT NULL DEFAULT 1")
+        # add base_capacity to training_slots if missing
+        cur = await db.execute("PRAGMA table_info(training_slots)")
+        rows = await cur.fetchall()
+        existing_slots = {r["name"] for r in rows}
+        if "base_capacity" not in existing_slots:
+            migrations.append("ALTER TABLE training_slots ADD COLUMN base_capacity INTEGER NOT NULL DEFAULT 0")
         for stmt in migrations:
             await db.execute(stmt)
+
+        # backfill base_capacity = capacity where zero
+        await db.execute("UPDATE training_slots SET base_capacity=capacity WHERE base_capacity=0")
 
         # add notify_open to users if missing
         cur = await db.execute("PRAGMA table_info(users)")
@@ -430,8 +447,8 @@ class DB:
     async def create_slot(self, group_id: int, starts_at: str, capacity: int, note: Optional[str]) -> int:
         async with self.connect() as db:
             cur = await db.execute(
-                "INSERT INTO training_slots(group_id, starts_at, capacity, note) VALUES(?,?,?,?)",
-                (group_id, starts_at, capacity, note)
+                "INSERT INTO training_slots(group_id, starts_at, capacity, base_capacity, note) VALUES(?,?,?,?,?)",
+                (group_id, starts_at, capacity, capacity, note)
             )
             await db.commit()
             return int(cur.lastrowid)
@@ -461,6 +478,39 @@ class DB:
             cur = await db.execute("SELECT * FROM training_slots WHERE slot_id=?", (slot_id,))
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def update_slot_time_capacity(self, slot_id: int, starts_at: str, capacity: int) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "UPDATE training_slots SET starts_at=?, capacity=? WHERE slot_id=?",
+                (starts_at, capacity, slot_id),
+            )
+            await db.commit()
+
+    async def cancel_slot_bookings(self, slot_id: int) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "UPDATE bookings SET status='cancelled' WHERE entity_type='training' AND entity_id=? AND status='active'",
+                (slot_id,),
+            )
+            await db.commit()
+
+    async def add_slot_exception(self, slot_id: int, starts_on: str) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO slot_exceptions(slot_id, starts_on, created_at) VALUES(?,?,?)",
+                (slot_id, starts_on, datetime.utcnow().isoformat()),
+            )
+            await db.commit()
+
+    async def has_slot_exception(self, slot_id: int, starts_on: str) -> bool:
+        async with self.connect() as db:
+            cur = await db.execute(
+                "SELECT 1 FROM slot_exceptions WHERE slot_id=? AND starts_on=?",
+                (slot_id, starts_on),
+            )
+            row = await cur.fetchone()
+            return bool(row)
 
     async def add_slot_capacity(self, slot_id: int, delta: int) -> None:
         async with self.connect() as db:
