@@ -31,6 +31,20 @@ CREATE TABLE IF NOT EXISTS group_settings (
   cancel_minutes_before INTEGER NOT NULL DEFAULT 360
 );
 
+CREATE TABLE IF NOT EXISTS chats (
+  chat_id INTEGER PRIMARY KEY,
+  title TEXT,
+  chat_type TEXT,
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_chats (
+  group_id INTEGER PRIMARY KEY,
+  chat_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS invites (
   token TEXT PRIMARY KEY,
   group_id INTEGER NOT NULL,
@@ -112,6 +126,14 @@ CREATE TABLE IF NOT EXISTS notify_open_log (
   slot_id INTEGER NOT NULL,
   sent_at TEXT NOT NULL,
   PRIMARY KEY (user_id, slot_id)
+);
+
+CREATE TABLE IF NOT EXISTS slot_full_notifications (
+  slot_id INTEGER NOT NULL,
+  admin_id INTEGER NOT NULL,
+  message_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (slot_id, admin_id)
 );
 
 CREATE TABLE IF NOT EXISTS admins (
@@ -332,6 +354,60 @@ class DB:
             row = await cur.fetchone()
             return int(row["c"])
 
+    # ---------- chats / group mapping ----------
+    async def upsert_chat(self, chat_id: int, title: str, chat_type: str, is_admin: bool) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                """INSERT INTO chats(chat_id, title, chat_type, is_admin, updated_at)
+                VALUES(?,?,?,?,?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                  title=excluded.title,
+                  chat_type=excluded.chat_type,
+                  is_admin=excluded.is_admin,
+                  updated_at=excluded.updated_at""",
+                (chat_id, title, chat_type, 1 if is_admin else 0, datetime.utcnow().isoformat()),
+            )
+            await db.commit()
+
+    async def list_admin_chats(self, offset: int, limit: int) -> List[dict]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT * FROM chats WHERE is_admin=1 ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+            return [dict(r) for r in rows]
+
+    async def count_admin_chats(self) -> int:
+        async with self.connect() as db:
+            cur = await db.execute("SELECT COUNT(*) AS c FROM chats WHERE is_admin=1")
+            row = await cur.fetchone()
+            return int(row["c"])
+
+    async def get_chat(self, chat_id: int) -> Optional[dict]:
+        async with self.connect() as db:
+            cur = await db.execute("SELECT * FROM chats WHERE chat_id=?", (chat_id,))
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def set_group_chat(self, group_id: int, chat_id: int) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO group_chats(group_id, chat_id, created_at) VALUES(?,?,?)",
+                (group_id, chat_id, datetime.utcnow().isoformat()),
+            )
+            await db.commit()
+
+    async def delete_group_chat(self, group_id: int) -> None:
+        async with self.connect() as db:
+            await db.execute("DELETE FROM group_chats WHERE group_id=?", (group_id,))
+            await db.commit()
+
+    async def get_group_chat(self, group_id: int) -> Optional[dict]:
+        async with self.connect() as db:
+            cur = await db.execute("SELECT * FROM group_chats WHERE group_id=?", (group_id,))
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
     # ---------- invites ----------
     async def create_invite(self, token: str, group_id: int, created_at: str) -> None:
         async with self.connect() as db:
@@ -385,6 +461,14 @@ class DB:
             cur = await db.execute("SELECT * FROM training_slots WHERE slot_id=?", (slot_id,))
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def add_slot_capacity(self, slot_id: int, delta: int) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                "UPDATE training_slots SET capacity=capacity+? WHERE slot_id=?",
+                (int(delta), slot_id),
+            )
+            await db.commit()
 
     # ---------- tournaments ----------
     async def create_tournament(
@@ -681,6 +765,29 @@ class DB:
                 "INSERT OR IGNORE INTO notify_open_log(user_id, slot_id, sent_at) VALUES(?,?,?)",
                 (user_id, slot_id, datetime.utcnow().isoformat()),
             )
+            await db.commit()
+
+    # ---------- full slot notifications ----------
+    async def add_full_notification(self, slot_id: int, admin_id: int, message_id: int) -> None:
+        async with self.connect() as db:
+            await db.execute(
+                """INSERT OR REPLACE INTO slot_full_notifications(slot_id, admin_id, message_id, created_at)
+                VALUES(?,?,?,?)""",
+                (slot_id, admin_id, message_id, datetime.utcnow().isoformat()),
+            )
+            await db.commit()
+
+    async def list_full_notifications(self, slot_id: int) -> List[dict]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT * FROM slot_full_notifications WHERE slot_id=?",
+                (slot_id,),
+            )
+            return [dict(r) for r in rows]
+
+    async def clear_full_notifications(self, slot_id: int) -> None:
+        async with self.connect() as db:
+            await db.execute("DELETE FROM slot_full_notifications WHERE slot_id=?", (slot_id,))
             await db.commit()
 
     async def toggle_payment(self, booking_id: int, admin_id: int) -> str:

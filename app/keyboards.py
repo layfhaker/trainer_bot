@@ -25,6 +25,7 @@ def kb_back(to: str = "main"):
 def kb_admin_root():
     return ikb([
         [InlineKeyboardButton(text="👥 Группы", callback_data="admin:groups:page:0")],
+        [InlineKeyboardButton(text="👥 Общие группы", callback_data="admin:commongroups")],
         [InlineKeyboardButton(text="🔗 Пригласительные ссылки", callback_data="admin:invites")],
         [InlineKeyboardButton(text="🔑 Пригласить админа", callback_data="admin:invite_admin")],
         [InlineKeyboardButton(text="📅 Занятия (слоты)", callback_data="admin:slots")],
@@ -68,6 +69,8 @@ def kb_slot_actions(
     can_leave: bool,
     can_join_second: bool = False,
     can_admin_book: bool = False,
+    show_users_button: bool = True,
+    can_increase_capacity: bool = False,
 ):
     rows = []
     if can_join:
@@ -76,6 +79,10 @@ def kb_slot_actions(
         rows.append([InlineKeyboardButton(text="👥 Записать второго человека", callback_data=f"train:join2:{slot_id}")])
     if can_admin_book:
         rows.append([InlineKeyboardButton(text="➕ Записать человека", callback_data=f"admin:training:book:{slot_id}:user")])
+    if can_increase_capacity:
+        rows.append([InlineKeyboardButton(text="➕ Увеличить места", callback_data=f"admin:slot:capadd:{slot_id}:train")])
+    if show_users_button:
+        rows.append([InlineKeyboardButton(text="👥 Записанные", callback_data=f"train:users:{slot_id}:page:0")])
     if can_leave:
         rows.append([InlineKeyboardButton(text="❌ Отменить запись", callback_data=f"train:leave:{slot_id}")])
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="train:list")])
@@ -109,6 +116,41 @@ def kb_admin_tournaments_root():
         [InlineKeyboardButton(text="📄 Список турниров", callback_data="admin:tournament:list:page:0")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")],
     ])
+
+
+def kb_admin_common_groups(groups, page: int, has_prev: bool, has_next: bool):
+    rows = []
+    for g in groups:
+        mark = "✅" if g.get("chat_id") else "⚪"
+        title = g.get("title") or f"Группа {g['group_id']}"
+        rows.append([InlineKeyboardButton(text=f"{mark} {title}", callback_data=f"admin:commongroup:{g['group_id']}:{page}")])
+    nav = []
+    if has_prev:
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"admin:commongroups:page:{page-1}"))
+    if has_next:
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"admin:commongroups:page:{page+1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:root")])
+    return ikb(rows)
+
+
+def kb_admin_select_chat(group_id: int, chats, page: int, has_prev: bool, has_next: bool, has_unlink: bool = True):
+    rows = []
+    for ch in chats:
+        title = ch.get("title") or str(ch["chat_id"])
+        rows.append([InlineKeyboardButton(text=title, callback_data=f"admin:commongroupchat:{group_id}:{ch['chat_id']}:{page}")])
+    if has_unlink:
+        rows.append([InlineKeyboardButton(text="❌ Убрать привязку", callback_data=f"admin:commongroupchat:{group_id}:none:{page}")])
+    nav = []
+    if has_prev:
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"admin:commongroup:{group_id}:page:{page-1}"))
+    if has_next:
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"admin:commongroup:{group_id}:page:{page+1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:commongroups:page:0")])
+    return ikb(rows)
 
 
 def kb_admin_entity_users(entity_type: str, entity_id: int, page: int, has_prev: bool, has_next: bool, back_to: str):

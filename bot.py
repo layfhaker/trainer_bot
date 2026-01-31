@@ -20,7 +20,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command
 
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ChatMemberUpdated
 
 from dotenv import load_dotenv
 
@@ -31,7 +31,8 @@ from app.db import DB
 from app.keyboards import (
     kb_main, kb_back, kb_admin_root, kb_pagination, kb_group_actions,
     kb_slot_actions, kb_admin_slots_root, kb_tour_actions,
-    kb_admin_tournaments_root, kb_admin_entity_users
+    kb_admin_tournaments_root, kb_admin_entity_users,
+    kb_admin_common_groups, kb_admin_select_chat
 )
 from app.utils import (
 
@@ -115,6 +116,49 @@ def mention(full_name: str, username: Optional[str]) -> str:
 
     return full_name
 
+
+@router.my_chat_member()
+async def on_my_chat_member(update: ChatMemberUpdated) -> None:
+    chat = update.chat
+    status = update.new_chat_member.status
+    is_admin = status in ("administrator", "creator")
+    if chat.type not in ("group", "supergroup"):
+        return
+    title = chat.title or getattr(chat, "full_name", None) or str(chat.id)
+    await db.upsert_chat(chat.id, title, chat.type, is_admin)
+
+
+async def notify_slot_full(slot_id: int) -> None:
+    admins = set(ADMIN_IDS) | set(ADMIN_CACHE)
+    if not admins:
+        return
+    slot = await db.get_slot(slot_id)
+    if not slot:
+        return
+    booked = await db.count_active_bookings("training", slot_id)
+    if booked < slot["capacity"]:
+        return
+    # avoid duplicate notifications
+    existing = await db.list_full_notifications(slot_id)
+    if existing:
+        return
+
+    starts = parse_dt(slot["starts_at"])
+    g = await db.get_group(slot["group_id"])
+    g_title = g["title"] if g else f"#{slot['group_id']}"
+    text = f"Закончились места для тренировки {fmt_dt_with_weekday(starts)} {g_title}"
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=[
+        [__import__("aiogram").types.InlineKeyboardButton(
+            text="➕ Увеличить места",
+            callback_data=f"admin:slot:capadd:{slot_id}:notif"
+        )]
+    ])
+    for admin_id in admins:
+        try:
+            msg = await bot.send_message(admin_id, text, reply_markup=kb)
+            await db.add_full_notification(slot_id, admin_id, msg.message_id)
+        except Exception:
+            continue
 
 def next_weekday_datetime(weekday: int, time_str: str):
 
@@ -488,7 +532,8 @@ async def cb_train_list(call: CallbackQuery):
 
     now = tz_now(TZ_OFFSET_HOURS)
 
-    from_iso = (now - timedelta(days=1)).isoformat()
+    # показываем только будущие/текущие слоты, прошедшие скрываем
+    from_iso = now.isoformat()
 
     to_iso = (now + timedelta(days=21)).isoformat()
 
@@ -622,11 +667,63 @@ async def cb_train_open(call: CallbackQuery):
             can_leave,
             can_join_second,
             can_admin_book=is_admin(call.from_user.id),
+            can_increase_capacity=is_admin(call.from_user.id),
         ),
     )
 
     await call.answer()
 
+
+
+@router.callback_query(F.data.startswith("train:users:") & F.data.contains(":page:"))
+async def cb_train_users(call: CallbackQuery):
+
+    parts = call.data.split(":")
+    slot_id = int(parts[2])
+    page = int(parts[-1])
+
+    slot = await db.get_slot(slot_id)
+
+    if not slot or not slot.get("is_active"):
+        await call.answer("Слот не найден.", show_alert=True)
+        return
+
+    u = await db.get_user(call.from_user.id)
+
+    if not u or u.get("group_id") != slot["group_id"]:
+        await call.answer("Это занятие не вашей группы.", show_alert=True)
+        return
+
+    limit = 15
+    offset = page * limit
+
+    total = await db.count_entity_bookings("training", slot_id)
+    items = await db.list_entity_bookings("training", slot_id, offset, limit)
+
+    lines = [f"<b>Записанные (слот #{slot_id})</b> ({total}):"]
+
+    rows = []
+
+    for i, it in enumerate(items, start=offset + 1):
+        uname = f"@{it['username']}" if it.get("username") else ""
+        seats = int(it.get("seats", 1))
+        seat_suffix = f" x{seats}" if seats > 1 else ""
+        lines.append(f"{i}) {it['full_name']} {uname}{seat_suffix}".strip())
+
+    nav = []
+    if page > 0:
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="⬅️", callback_data=f"train:users:{slot_id}:page:{page-1}"))
+    if offset + limit < total:
+        nav.append(__import__("aiogram").types.InlineKeyboardButton(text="➡️", callback_data=f"train:users:{slot_id}:page:{page+1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"train:open:{slot_id}")])
+
+    kb = __import__("aiogram").types.InlineKeyboardMarkup(inline_keyboard=rows)
+
+    await call.message.edit_text("\n".join(lines), reply_markup=kb)
+
+    await call.answer()
 
 
 @router.callback_query(F.data.startswith("train:join:"))
@@ -690,6 +787,7 @@ async def cb_train_join(call: CallbackQuery):
         return
 
     await db.create_booking(call.from_user.id, "training", slot_id)
+    await notify_slot_full(slot_id)
 
     await call.answer("Записал ✅")
 
@@ -728,6 +826,7 @@ async def cb_train_join_second(call: CallbackQuery):
     existing = await db.get_user_booking(call.from_user.id, "training", slot_id)
     if not existing:
         await db.create_booking(call.from_user.id, "training", slot_id)
+        await notify_slot_full(slot_id)
         await call.answer("Записал ✅")
         await cb_train_open(call)
         return
@@ -738,6 +837,7 @@ async def cb_train_join_second(call: CallbackQuery):
         return
 
     await db.update_booking_seats(existing["booking_id"], current_seats + 1)
+    await notify_slot_full(slot_id)
     await call.answer("Записал второго человека ✅")
     await cb_train_open(call)
 
@@ -1041,6 +1141,120 @@ async def cb_admin_root(call: CallbackQuery):
         return
     await call.message.edit_text("Админ меню:", reply_markup=kb_admin_root())
     await call.answer()
+
+COMMON_GROUPS_PAGE = 12
+
+
+async def show_common_groups(call: CallbackQuery, page: int) -> None:
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    total = await db.count_groups()
+    limit = COMMON_GROUPS_PAGE
+    offset = page * limit
+    groups = await db.list_groups(offset, limit)
+    for g in groups:
+        mapping = await db.get_group_chat(g["group_id"])
+        g["chat_id"] = mapping["chat_id"] if mapping else None
+    if not groups:
+        await call.message.edit_text("Групп пока нет.", reply_markup=kb_back("admin:root"))
+        await call.answer()
+        return
+    has_prev = page > 0
+    has_next = offset + limit < total
+    kb = kb_admin_common_groups(groups, page, has_prev, has_next)
+    await call.message.edit_text("Общие группы: выберите, к какому чату привязать.", reply_markup=kb)
+    await call.answer()
+
+
+async def show_group_chat_picker(call: CallbackQuery, group_id: int, page: int) -> None:
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    g = await db.get_group(group_id)
+    if not g:
+        await call.answer("Группа не найдена.", show_alert=True)
+        return
+    limit = 12
+    offset = page * limit
+    total = await db.count_admin_chats()
+    chats = await db.list_admin_chats(offset, limit)
+    current = await db.get_group_chat(group_id)
+    if not chats:
+        text = (
+            f"Группа: <b>{g['title']}</b>\n"
+            "Бот не является админом ни в одном групповом чате.\n"
+            "Добавьте бота как администратора в нужный чат и попробуйте снова."
+        )
+        await call.message.edit_text(text, reply_markup=kb_back("admin:commongroups:page:0"))
+        await call.answer()
+        return
+    has_prev = page > 0
+    has_next = offset + limit < total
+    kb = kb_admin_select_chat(group_id, chats, page, has_prev, has_next, has_unlink=bool(current))
+    text = f"Привязка группы <b>{g['title']}</b>. Выберите чат."
+    if current:
+        chat = await db.get_chat(current["chat_id"])
+        if chat:
+            text += f"\nТекущий чат: {chat.get('title') or chat['chat_id']}"
+    await call.message.edit_text(text, reply_markup=kb)
+    await call.answer()
+
+
+@router.callback_query(F.data == "admin:commongroups")
+async def cb_admin_common_groups(call: CallbackQuery):
+    await show_common_groups(call, 0)
+
+
+@router.callback_query(F.data.startswith("admin:commongroups:page:"))
+async def cb_admin_common_groups_page(call: CallbackQuery):
+    page = int(call.data.split(":")[-1])
+    await show_common_groups(call, page)
+
+
+@router.callback_query(F.data.startswith("admin:commongroup:"))
+async def cb_admin_commongroup(call: CallbackQuery):
+    parts = call.data.split(":")
+    # patterns: admin:commongroup:<gid>:<page?> or ...:page:<p>
+    group_id = int(parts[2])
+    page = 0
+    if len(parts) >= 4 and parts[3].isdigit():
+        page = int(parts[3])
+    elif len(parts) >= 5 and parts[3] == "page" and parts[4].isdigit():
+        page = int(parts[4])
+    await show_group_chat_picker(call, group_id, page)
+
+
+@router.callback_query(F.data.startswith("admin:commongroupchat:"))
+async def cb_admin_commongroupchat(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    parts = call.data.split(":")
+    if len(parts) < 4:
+        await call.answer("Некорректные данные.", show_alert=True)
+        return
+    group_id = int(parts[2])
+    chat_part = parts[3]
+    page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+    if chat_part == "none":
+        await db.delete_group_chat(group_id)
+        await call.answer("Привязка удалена.")
+        await show_group_chat_picker(call, group_id, page)
+        return
+    try:
+        chat_id = int(chat_part)
+    except ValueError:
+        await call.answer("Некорректный чат.", show_alert=True)
+        return
+    chat = await db.get_chat(chat_id)
+    if not chat or not chat.get("is_admin"):
+        await call.answer("Бот не админ в этом чате.", show_alert=True)
+        return
+    await db.set_group_chat(group_id, chat_id)
+    await call.answer("Привязано.")
+    await show_group_chat_picker(call, group_id, page)
+
 
 @router.callback_query(F.data == "admin:reset")
 async def cb_admin_reset(call: CallbackQuery):
@@ -2243,6 +2457,7 @@ async def cb_admin_slot_open(call: CallbackQuery):
     rows=[
         [__import__("aiogram").types.InlineKeyboardButton(text="👥 Записанные", callback_data=f"admin:training:{slot_id}:users:page:0")],
         [__import__("aiogram").types.InlineKeyboardButton(text="➕ Записать человека", callback_data=f"admin:training:book:{slot_id}:admin")],
+        [__import__("aiogram").types.InlineKeyboardButton(text="➕ Увеличить места", callback_data=f"admin:slot:capadd:{slot_id}:admin")],
         [__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin:slot:list:{slot['group_id']}")]
     ]
 
@@ -2250,6 +2465,23 @@ async def cb_admin_slot_open(call: CallbackQuery):
 
     await call.message.edit_text(text, reply_markup=kb)
 
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("admin:slot:capadd:"))
+async def cb_admin_slot_capadd(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    parts = call.data.split(":")
+    slot_id = int(parts[3])
+    back_mode = parts[4] if len(parts) > 4 else "train"
+    back_to = f"train:open:{slot_id}" if back_mode == "train" else f"admin:slot:open:{slot_id}"
+    await db.set_mode(call.from_user.id, f"admin_slot_capadd:{slot_id}:{back_mode}")
+    await call.message.edit_text(
+        "Введите сколько мест добавить (например: 2).\n/cancel — отмена.",
+        reply_markup=kb_back(back_to),
+    )
     await call.answer()
 
 
@@ -2683,11 +2915,40 @@ async def message_router(message: Message):
             return
         guest_id = await db.create_guest_user(name, None)
         await db.create_booking(guest_id, "training", slot_id, status="active")
+        await notify_slot_full(slot_id)
         await db.set_mode(message.from_user.id, None)
         back_to = f"admin:slot:open:{slot_id}" if back_mode == "admin" else f"train:open:{slot_id}"
         await message.answer("Записал ✅", reply_markup=kb_back(back_to))
         return
 
+
+
+    if mode.startswith("admin_slot_capadd:"):
+        parts = mode.split(":")
+        slot_id = int(parts[1])
+        back_mode = parts[2] if len(parts) > 2 else "train"
+        back_to = f"train:open:{slot_id}" if back_mode == "train" else f"admin:slot:open:{slot_id}"
+        raw = (message.text or "").strip()
+        if not raw.lstrip("+").isdigit() or int(raw) <= 0:
+            await message.answer("Нужно положительное число (например: 2).", reply_markup=kb_back(back_to))
+            return
+        delta = int(raw)
+        await db.add_slot_capacity(slot_id, delta)
+        await db.set_mode(message.from_user.id, None)
+        notes = await db.list_full_notifications(slot_id)
+        for n in notes:
+            try:
+                await bot.delete_message(n["admin_id"], n["message_id"])
+            except Exception:
+                pass
+        await db.clear_full_notifications(slot_id)
+        slot = await db.get_slot(slot_id)
+        new_cap = slot["capacity"] if slot else "?"
+        await message.answer(
+            f"Добавил {delta} мест. Новая вместимость: {new_cap}.",
+            reply_markup=kb_back(back_to),
+        )
+        return
 
     # group settings update
     if mode.startswith("admin_group_settings:"):
