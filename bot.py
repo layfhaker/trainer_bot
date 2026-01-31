@@ -83,6 +83,7 @@ bot = Bot(
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     session=session,
 )
+BOT_ID = None
 dp = Dispatcher()
 
 router = Router()
@@ -117,6 +118,18 @@ def mention(full_name: str, username: Optional[str]) -> str:
     return full_name
 
 
+async def ensure_chat_registered(chat) -> None:
+    """
+    Store chat in DB with admin flag based on bot's status.
+    """
+    if chat.type not in ("group", "supergroup"):
+        return
+    cm = await bot.get_chat_member(chat.id, BOT_ID)
+    is_admin = cm.status in ("administrator", "creator")
+    title = getattr(chat, "title", None) or getattr(chat, "full_name", None) or str(chat.id)
+    await db.upsert_chat(chat.id, title, chat.type, is_admin)
+
+
 @router.my_chat_member()
 async def on_my_chat_member(update: ChatMemberUpdated) -> None:
     chat = update.chat
@@ -126,6 +139,18 @@ async def on_my_chat_member(update: ChatMemberUpdated) -> None:
         return
     title = chat.title or getattr(chat, "full_name", None) or str(chat.id)
     await db.upsert_chat(chat.id, title, chat.type, is_admin)
+
+
+@router.message(Command("register_chat"))
+async def cmd_register_chat(message: Message) -> None:
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    cm_bot = await bot.get_chat_member(message.chat.id, BOT_ID)
+    if cm_bot.status not in ("administrator", "creator"):
+        await message.reply("Нужно сделать бота админом, потом повторите /register_chat.")
+        return
+    await ensure_chat_registered(message.chat)
+    await message.reply("Чат зарегистрирован как общий: бот имеет права администратора.")
 
 
 async def notify_slot_full(slot_id: int) -> None:
@@ -1215,7 +1240,7 @@ async def show_group_chat_picker(call: CallbackQuery, group_id: int, page: int) 
         text = (
             f"Группа: <b>{g['title']}</b>\n"
             "Бот не является админом ни в одном групповом чате.\n"
-            "Добавьте бота как администратора в нужный чат и попробуйте снова."
+            "Добавьте бота админом в нужный чат и отправьте там /register_chat."
         )
         await call.message.edit_text(text, reply_markup=kb_back("admin:commongroups:page:0"))
         await call.answer()
@@ -2450,11 +2475,8 @@ async def cb_admin_slot_list_for_group(call: CallbackQuery):
         dt=parse_dt(s["starts_at"])
 
         rows.append([__import__("aiogram").types.InlineKeyboardButton(
-
-            text=f"{fmt_dt(dt)}",
-
+            text=f"{fmt_dt_with_weekday(dt)}",
             callback_data=f"admin:slot:open:{s['slot_id']}"
-
         )])
 
     rows.append([__import__("aiogram").types.InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:slots")])
@@ -3425,6 +3447,8 @@ async def main():
         await db.add_admin(uid)
     global ADMIN_CACHE
     ADMIN_CACHE = set(await db.list_admins()) | set(ADMIN_IDS)
+    global BOT_ID
+    BOT_ID = (await bot.get_me()).id
 
     logger.info("DB initialized")
 

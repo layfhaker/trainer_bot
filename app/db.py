@@ -357,6 +357,14 @@ class DB:
             )
             return [dict(r) for r in rows]
 
+    async def list_group_chats(self, group_id: int) -> List[int]:
+        async with self.connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT chat_id FROM group_chats WHERE group_id=?",
+                (group_id,),
+            )
+            return [int(r["chat_id"]) for r in rows]
+
     async def list_users_with_notify(self, group_id: int) -> List[int]:
         async with self.connect() as db:
             rows = await db.execute_fetchall(
